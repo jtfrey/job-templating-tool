@@ -5,7 +5,7 @@ We have many users who leverage job arrays (whether in Slurm or Grid Engine) to 
 
 ## Case study
 
-Consider the following Gaussian input file (see the [examples/water](water example) in this repository):
+Consider the following Gaussian input file (see the [water example](./examples/water) in this repository):
 
 ```
 # PBE1PBE/6-311g
@@ -120,7 +120,7 @@ The value of each parameter is provided to the delimited code blocks using the s
 
 In addition to the parameter values, the current job array index of the file being generated is also provided to the code block in the `JOB_ARRAY_INDEX` variable.
 
-See the [examples](examples) directory for sample templates.
+See the [examples](./examples) directory for sample templates.
 
 
 ## Usage
