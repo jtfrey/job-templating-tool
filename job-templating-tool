@@ -445,7 +445,7 @@ cli_parser = argparse.ArgumentParser(
                         epilog='A <param-spec> consists of <param-name>=<value-list>, where <param-name> uses any characters except equals (=).  The <value-list> is a comma-separated list of integer/float values; comma-separated list of integer/float ranges with optional step size (:1 or :1.5) or division count (/10); or comma-separated list of strings, optionally quote delimited.  ')
 cli_parser.add_argument('--version',
                         action='version',
-                        version='%(prog)s 0.0.1a')
+                        version='%(prog)s 1.0.0')
 cli_parser.add_argument('--verbose', '-v',
                         dest='verbose_level',
                         default=0,
