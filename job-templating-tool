@@ -465,7 +465,12 @@ cli_parser.add_argument('--catalog', '-c',
                         metavar='<filepath>',
                         dest='catalog_path',
                         help='filename to which the indexing catalog (that maps job array index to parameter values) should be written; use "-" to write the index to stdout, if not specified then no index is written')
-cli_parser.add_argument('--array-index', '-a',
+cli_parser.add_argument('--append-to-catalog',
+                        dest='should_append_to_catalog',
+                        action='store_true',
+                        default=False,
+                        help='if the indexing catalog file exists, append to it rather than overwriting it')
+cli_parser.add_argument('--array-index', '-i',
                         metavar='<integer>',
                         dest='array_index',
                         type=int,
@@ -475,26 +480,71 @@ cli_parser.add_argument('--use-flat-layout', '-f',
                         dest='use_flat_layout',
                         action='store_true',
                         default=False,
-                        help='do not create subdirectories for each job array index, put all files in the current directory')
-cli_parser.add_argument('--directory-prefix', '-P',
+                        help='do not create subdirectories for each job array index, just put all generated files in the current directory')
+cli_parser.add_argument('--prefix', '-P',
                         metavar='<prefix>',
-                        dest='directory_prefix',
+                        dest='prefix',
                         default='./',
-                        help='when using the subdirectory for each job array index, prefix this string on the job array index; e.g. for "-P ./JOB_" the directories ./JOB_1, ./JOB_2, etc. would be generated')
+                        help='prefix the given string on every file generated/copied/symlinked by the program; e.g. for directory mode and "-P ./JOB_" the directories ./JOB_1, ./JOB_2, etc. would be generated (trailing path separators are very significant, as they imply a subdirectory and not a prefix on a filename)')
 cli_parser.add_argument('--index-format-in-paths',
                         metavar='<python-conversion>',
                         dest='index_format_in_paths',
                         default=':d',
-                        help='Python format conversion specification to turn the integer job array index into a file name component, e.g. ":04d" for names like "0001" and "0102"; default is ":d" for names like "1" and "102"')
+                        help='Python format conversion specification to turn the integers (like the job array index) into a file name component, e.g. ":04d" for names like "0001" and "0102"; default is ":d" for names like "1" and "102"')
 cli_parser.add_argument('--ignore-templating-errors',
                         dest='should_ignore_templating_errors',
                         action='store_true',
                         default=False,
                         help='do not exit on templating errors, continue trying to generate the rest of the templated content')
-cli_parser.add_argument(nargs=argparse.REMAINDER,
+
+#
+# Directory mode options go in their own subgroup:
+#
+cli_parser_dirmode = cli_parser.add_argument_group(
+                        title='directory mode',
+                        description='options available when not doing flat layout')
+cli_parser_dirmode.add_argument('--jobs-per-directory', '-j',
+                        metavar='<count>',
+                        dest='jobs_per_directory',
+                        type=int,
+                        default=0,
+                        help='create a hierarchy of directories such that no more than this many job subdirectories appear in each leaf directory; e.g. for --jobs-per-directory=4 and 16 generated job subdirectories, the paths would be <prefix>/{0,1,2,3}/<job-array-index>, which each first-level directory under prefix having 4 job subdirectories')
+cli_parser_dirmode.add_argument('--copy', '-C',
                         metavar='<filepath>',
+                        dest='copy_files',
+                        action='append',
+                        help='copy the given path to each job subdirectory (can be specified multiple times)')
+cli_parser_dirmode.add_argument('--symlink', '-s',
+                        metavar='<filepath>',
+                        dest='symlink_files',
+                        action='append',
+                        help='create a symbolic link to the given path in each job subdirectory (can be specified multiple times)')
+cli_parser_dirmode.add_argument('--no-relative-targets',
+                        dest='should_not_create_relative_symlinks',
+                        action='store_true',
+                        default=False,
+                        help='for --symlink/-s, always use the absolute path of the target file/directory and not a relative path')
+cli_parser_dirmode.add_argument('--array-base-index',
+                        metavar='<index>',
+                        dest='array_base_index',
+                        type=int,
+                        default=None,
+                        help='when used in conjuncation with --jobs-per-directory/-j, this is the lowest possible index in the array; useful for working on a subset of a larger job array (using --array-index/-a, --array-size)')
+cli_parser_dirmode.add_argument('--array-size',
+                        metavar='<count>',
+                        dest='array_size',
+                        type=int,
+                        default=0,
+                        help='when used in conjuncation with --jobs-per-directory/-j, the hierarchy is structured as though there are this many jobs in the array; useful for working on a subset of a larger job array (using --array-index/-a, --array-base-index)')
+
+
+#
+# Template file(s) are provided as positional arguments:
+#
+cli_parser.add_argument(nargs='+',
+                        metavar='<template-file>',
                         dest='input_templates',
-                        help='filename of an input template that should be processed')
+                        help='filename of an input template that should be processed; use "-" for stdin')
 
 
 # Parser CLI arguments:
@@ -508,6 +558,49 @@ elif logging_level >= len(log_level_map): logging_level = len(log_level_map) - 1
 logging.basicConfig(format='[%(levelname)s] %(message)s', level=log_level_map[logging_level])
 
 
+# Validate array index:
+if cli_args.array_index < 1:
+    logging.error('the starting array index must be a positive integer')
+    sys.exit(errno.EINVAL)
+
+
+# Validate options specific to directory mode:
+if not cli_args.use_flat_layout:
+    # Validate jobs-per-directory if specified:
+    if cli_args.jobs_per_directory < 0:
+        logging.error('invalid --jobs-per-directory/-j: %d', cli_args.jobs_per_directory)
+        sys.exit(errno.EINVAL)
+
+    # Validate the base index if present:
+    if cli_args.array_base_index is None:
+        cli_args.array_base_index = cli_args.array_index
+    if cli_args.array_base_index <= 0:
+        logging.error('invalid --array-base-index: %d', cli_args.array_base_index)
+        sys.exit(errno.EINVAL)
+    elif cli_args.array_index < cli_args.array_base_index:
+        logging.error('starting array index is lower than the base index: %d < %d', cli_args.array_index, cli_args.array_base_index)
+        sys.exit(errno.EINVAL)
+
+    # Validate array size:
+    if cli_args.array_size < 0:
+        logging.error('invalid --array-size: %d', cli_args.array_size)
+        sys.exit(errno.EINVAL)
+
+    # Check to be sure all copy and symlink file sources actually exist:
+    if cli_args.copy_files:
+        for copy_file in cli_args.copy_files:
+            if not os.path.exists(copy_file):
+                logging.error('cannot copy %s: does not exist', copy_file)
+                sys.exit(errno.EINVAL)
+            if not (os.path.isfile(copy_file) or os.path.isdir(copy_file) or os.path.islink(copy_file)):
+                logging.error('cannot copy %s: not a regular file, directory, or symbolic link', copy_file)
+                sys.exit(errno.EINVAL)
+    if cli_args.symlink_files:
+        for symlink_file in cli_args.symlink_files:
+            if not os.path.exists(symlink_file):
+                logging.error('cannot symlink %s: does not exist', symlink_file)
+                sys.exit(errno.EINVAL)
+
 # No templates?
 if cli_args.input_templates is None or len(cli_args.input_templates) == 0:
     logging.critical('no input templates were provided, so there is nothing to do')
@@ -519,7 +612,7 @@ for input_template in cli_args.input_templates:
         if input_template in input_templates:
             logging.error('the input template %s was specified multiple times', input_template)
             cli_parser.print_usage()
-            sys.exit(EINVAL)
+            sys.exit(errno.EINVAL)
         input_templates.append(input_template)
     else:
         logging.error('the input template %s is not readable', input_template)
@@ -576,7 +669,7 @@ if cli_args.catalog_path:
         logging.debug('indexing catalog will be written to stdout')
     else:
         try:
-            catalog_stream = open(cli_args.catalog_path, 'w')
+            catalog_stream = open(cli_args.catalog_path, ('a' if cli_args.should_append_to_catalog else 'w'))
             logging.debug('indexing catalog will be written to %s', cli_args.catalog_path)
         except Exception as E:
             logging.error('unable to open indexing catalog %s for writing: %s', cli_args.catalog_path, str(E))
@@ -595,6 +688,15 @@ for p in compiled_parameters:
 logging.debug('global variable space after parameter reduction: %s', str(global_variables))
 
 
+# So how many files are we going to generate?
+param_combination_count = reduce((lambda a, b: a * b), [len(p.value_list) for p in final_parameters], 1)
+logging.info('total parameter combinations %d', param_combination_count)
+if cli_args.array_size == 0:
+    cli_args.array_size = param_combination_count
+input_template_count = len(input_templates)
+logging.info('will generate %d file(s)', param_combination_count * input_template_count)
+
+
 # Create our functions that transforms input paths into output paths, based on
 # the flat- versus subdirectory layout that was chosen:
 if cli_args.use_flat_layout:
@@ -606,16 +708,26 @@ if cli_args.use_flat_layout:
         """
 
         index_to_string_format = '{0' + cli_args.index_format_in_paths + '}'
+        path_prefix = cli_args.prefix
+        path_prefix_is_dir = cli.args.prefix.endswith(os.sep)
+        path_prefix_is_dir_created = False
 
         @classmethod
         def templatePathToOutputPath(cls, template_path, job_array_index):
-            path_components = os.path.split(template_path)
+            if cls.path_prefix_is_dir and not path_prefix_is_dir_created:
+                if not os.path.exists(cls.path_prefix):
+                    TemplatePathHelper.mkdir_p(job_subdirectory)
+                path_prefix_is_dir_created = True
+
             if template_path == '-':
                 return 'stdin_' + cls.index_to_string_format.format(job_array_index)
+            path_components = os.path.split(template_path)
             filename_components = os.path.splitext(template_path)
             return filename_components[0] + '_' + cls.index_to_string_format.format(job_array_index) + filename_components[1]
 
 else:
+    import shutil
+
     class TemplatePathHelper(object):
         """
         This variant of TemplatePathHelper creates a directory (under the prefix specified
@@ -628,7 +740,14 @@ else:
         """
 
         index_to_string_format = '{0' + cli_args.index_format_in_paths + '}'
-        job_subdirectory_prefix = cli_args.directory_prefix
+        jobs_per_directory = cli_args.jobs_per_directory
+        dir_hierarchy_depth = None
+        array_base_index = cli_args.array_base_index
+        array_size = cli_args.array_size
+        copy_files = cli_args.copy_files
+        symlink_files = cli_args.symlink_files
+        should_not_create_relative_symlinks = cli_args.should_not_create_relative_symlinks
+        job_subdirectory_prefix = cli_args.prefix
         initialized_directories = []
 
         @staticmethod
@@ -643,24 +762,87 @@ else:
                     os.mkdir(path, mode)
 
         @classmethod
+        def directoryPrefixForJobArrayIndex(cls, job_array_index):
+            if cls.dir_hierarchy_depth == 0:
+                return cls.job_subdirectory_prefix + cls.index_to_string_format.format(job_array_index)
+
+            # Zero-shift the index:
+            zero_based_index = job_array_index - cls.array_base_index
+
+            # Repeatedly divide by the number of jobs per directory, creating
+            # new directories until the index is small enough:
+            path_list = [cls.index_to_string_format.format(job_array_index)]
+            count = cls.dir_hierarchy_depth
+            while count > 0:
+                index = zero_based_index / cls.jobs_per_directory
+                path_list.insert(0, cls.index_to_string_format.format(index))
+                zero_based_index = index
+                count = count - 1
+            return cls.job_subdirectory_prefix + os.path.join(*path_list)
+
+        @classmethod
         def templatePathToOutputPath(cls, template_path, job_array_index):
-            job_subdirectory = cls.job_subdirectory_prefix + cls.index_to_string_format.format(job_array_index)
+            # First time through?  Stash the base index:
+            if cls.dir_hierarchy_depth is None:
+                # Determine how deep the tree will need to be:
+                if cls.jobs_per_directory <= 0:
+                    cls.dir_hierarchy_depth = 0
+                else:
+                    count = cls.array_size
+                    depth = 0
+                    while count > cls.jobs_per_directory:
+                        depth = depth + 1
+                        count = count / cls.jobs_per_directory
+                    cls.dir_hierarchy_depth = depth
+                logging.debug('directory hierarchy depth will be %d', cls.dir_hierarchy_depth)
+
+            # Get the directory path:
+            job_subdirectory = cls.directoryPrefixForJobArrayIndex(job_array_index)
+
             if job_subdirectory not in cls.initialized_directories:
                 if os.path.exists(job_subdirectory):
                     raise RuntimeError('the job array subdirectory {0} already exists'.format(job_subdirectory))
                 TemplatePathHelper.mkdir_p(job_subdirectory)
+
+                # Handle copying-in any files specified by user:
+                if cls.copy_files:
+                    for src_file in cls.copy_files:
+                        if os.path.isdir(src_file):
+                            shutil.copytree(src_file, os.path.join(job_subdirectory, os.path.basename(src_file)))
+                        else:
+                            shutil.copy2(src_file, os.path.join(job_subdirectory, os.path.basename(src_file)))
+
+                # Handle symlinking an files specified by user:
+                if cls.symlink_files:
+                    for target_file in cls.symlink_files:
+                        if cls.should_not_create_relative_symlinks or os.path.isabs(target_file) or os.path.isabs(cls.job_subdirectory_prefix):
+                            # Use absolute paths, period:
+                            abs_target_file = os.path.realpath(target_file)
+                        else:
+                            # Attempt to find a relative path:
+                            abs_target_file = os.path.realpath(target_file)
+                            abs_job_directory = os.path.realpath(job_subdirectory)
+                            # Find the common root:
+                            common_root = os.path.commonprefix([abs_target_file, abs_job_directory])
+                            if common_root and common_root != '/':
+                                # Having a common root means we can construct a path that's
+                                # relative
+                                rel_target_file = os.path.relpath(abs_target_file, common_root)
+                                rel_job_directory = os.path.relpath(abs_job_directory, common_root)
+                                rel_target_path = ['..'] * (1 + rel_job_directory.count(os.sep))
+                                rel_target_path.append(rel_target_file)
+                                abs_target_file = os.path.join(*rel_target_path)
+                            else:
+                                abs_target_file = os.path.realpath(target_file)
+
+                        os.symlink(abs_target_file, os.path.join(job_subdirectory, os.path.basename(target_file)))
+                        logging.debug('created symlink to %s in %s', abs_target_file, job_subdirectory)
+
                 cls.initialized_directories.append(job_subdirectory)
             if template_path == '-':
                 return os.path.join(job_subdirectory, 'stdin')
             path_components = os.path.split(template_path)
             return os.path.join(job_subdirectory, path_components[1])
-
-
-# So how many files are we going to generate?
-param_combination_count = reduce((lambda a, b: a * b), [len(p.value_list) for p in final_parameters], 1)
-logging.info('total parameter combinations %d', param_combination_count)
-input_template_count = len(input_templates)
-logging.info('will generate %d file(s)', param_combination_count * input_template_count)
 
 
 # Go ahead and do it!

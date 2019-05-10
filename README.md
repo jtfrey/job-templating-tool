@@ -44,7 +44,7 @@ Each index in the job array will occupy its own directory under the prefix `jobs
 
 ```
 $ job-templating-tool -vv --parameter OH=0.8-1.0:+0.1 --parameter HOH=114.0-122.0:+2.0 \
-  --directory-prefix ./jobs/run0001/ water.com
+  --prefix ./jobs/run0001/ water.com
 [INFO] 1 input templates to process
 [INFO] added parameter OH = [0.8, 0.9, 1.0]
 [INFO] added parameter HOH = [114.0, 116.0, 118.0, 120.0, 122.0]
@@ -87,7 +87,7 @@ In order to know which parameter values are associated with each of the job arra
 ```
 $ rm -rf jobs/run0001
 $ job-templating-tool --parameter OH=0.8-1.0:+0.1 --parameter HOH=114.0-122.0:+2.0 \
-  --directory-prefix ./jobs/run0001/ --catalog run0001.txt water.com
+  --prefix ./jobs/run0001/ --catalog run0001.txt water.com
 
 $ cat run0001.txt
 [1:./jobs/run0001/1/water.com] {"HOH":114.0,"OH":0.8}
@@ -129,16 +129,20 @@ See the [examples](./examples) directory for sample templates.
 $ job-templating-tool --help
 usage: job-templating-tool [-h] [--version] [--verbose] [--quiet]
                            [--parameter <param-spec>] [--catalog <filepath>]
-                           [--array-index <integer>] [--use-flat-layout]
-                           [--directory-prefix <prefix>]
+                           [--append-to-catalog] [--array-index <integer>]
+                           [--use-flat-layout] [--prefix <prefix>]
                            [--index-format-in-paths <python-conversion>]
                            [--ignore-templating-errors]
-                           ...
+                           [--jobs-per-directory <count>] [--copy <filepath>]
+                           [--symlink <filepath>] [--array-base-index <index>]
+                           [--array-size <count>]
+                           <template-file> [<template-file> ...]
 
 generate templated job arrays
 
 positional arguments:
-  <filepath>            filename of an input template that should be processed
+  <template-file>       filename of an input template that should be
+                        processed; use "-" for stdin
 
 optional arguments:
   -h, --help            show this help message and exit
@@ -155,24 +159,56 @@ optional arguments:
                         array index to parameter values) should be written;
                         use "-" to write the index to stdout, if not specified
                         then no index is written
-  --array-index <integer>, -a <integer>
+  --append-to-catalog   if the indexing catalog file exists, append to it
+                        rather than overwriting it
+  --array-index <integer>, -i <integer>
                         starting index for the job array
   --use-flat-layout, -f
                         do not create subdirectories for each job array index,
-                        put all files in the current directory
-  --directory-prefix <prefix>, -P <prefix>
-                        when using the subdirectory for each job array index,
-                        prefix this string on the job array index; e.g. for
-                        "-P ./JOB_" the directories ./JOB_1, ./JOB_2, etc.
-                        would be generated
+                        just put all generated files in the current directory
+  --prefix <prefix>, -P <prefix>
+                        prefix the given string on every file
+                        generated/copied/symlinked by the program; e.g. for
+                        directory mode and "-P ./JOB_" the directories
+                        ./JOB_1, ./JOB_2, etc. would be generated (trailing
+                        path separators are very significant, as they imply a
+                        subdirectory and not a prefix on a filename)
   --index-format-in-paths <python-conversion>
                         Python format conversion specification to turn the
-                        integer job array index into a file name component,
-                        e.g. ":04d" for names like "0001" and "0102"; default
-                        is ":d" for names like "1" and "102"
+                        integers (like the job array index) into a file name
+                        component, e.g. ":04d" for names like "0001" and
+                        "0102"; default is ":d" for names like "1" and "102"
   --ignore-templating-errors
                         do not exit on templating errors, continue trying to
                         generate the rest of the templated content
+
+directory mode:
+  options available when not doing flat layout
+
+  --jobs-per-directory <count>, -j <count>
+                        create a hierarchy of directories such that no more
+                        than this many job subdirectories appear in each leaf
+                        directory; e.g. for --jobs-per-directory=4 and 16
+                        generated job subdirectories, the paths would be
+                        <prefix>/{0,1,2,3}/<job-array-index>, which each
+                        first-level directory under prefix having 4 job
+                        subdirectories
+  --copy <filepath>, -C <filepath>
+                        copy the given path to each job subdirectory (can be
+                        specified multiple times)
+  --symlink <filepath>, -s <filepath>
+                        create a symbolic link to the given path in each job
+                        subdirectory (can be specified multiple times)
+  --array-base-index <index>
+                        when used in conjuncation with --jobs-per-
+                        directory/-j, this is the lowest possible index in the
+                        array; useful for working on a subset of a larger job
+                        array (using --array-index/-a, --array-size)
+  --array-size <count>  when used in conjuncation with --jobs-per-
+                        directory/-j, the hierarchy is structured as though
+                        there are this many jobs in the array; useful for
+                        working on a subset of a larger job array (using
+                        --array-index/-a, --array-base-index)
 
 A <param-spec> consists of <param-name>=<value-list>, where <param-name> uses
 any characters except equals (=). The <value-list> is a comma-separated list
@@ -223,5 +259,158 @@ In this case, `i` will decrease by 2 while `j` increased by 2.  The range can al
 
 Here, `a` would take values [0.0, 1.0, 2.0, 3.0, 4.0, 5.0] while `b` would take values [50.0, 30.0, 10.0].
 
+### Directory mode
 
+By default the program creates a directory to hold each job array index generated.  The directory is named using the job array index, with several possible transformations:
 
+- Index output format:  A Python format conversion specifier can be provided to alter the width and zero-pad the name, as in `:04d` to yield e.g. `0001` and `0230` as directory names.  The default is `:d` to print the integer with no formal width or padding.  Note that if you do specify a width, zero-padding is a good idea to avoid whitespace in filenames.
+- Prefix:  A string added to the head of every generated, copied, or symlinked file.  You **must** include a trailing path separator character (e.g. '/' on Unix) if the prefix is meant to be a directory containing the generated content.  Otherwise, it is just a prefix on the first component of the generated paths.  For example, `--prefix=jobs/run1_` would produce directories like `jobs/run1_1`, `jobs/run1_2` whereas `--prefix=jobs/run1/` creates a parent directory for the jobs like `jobs/run1/1` and `jobs/run1/2`.
+- Directory splitting:  For very large job arrays it may not be optimal to collocate all the job directories under a single parent directory.  The options dealing with directory splitting are fairly complex, and are summarized in the following subsection.
+
+#### Directory splitting
+
+The `--jobs-per-directory=N` option forces the program to create a hierarchy of directories such that every directory in the hierarchy has at most N subdirectories present within it.  For the Gaussian example above, 15 jobs are created; with `--jobs-per-directory=8`, the same command would produce:
+
+```
+$ job-templating-tool --parameter OH=0.8-1.0:+0.1 --parameter HOH=114.0-122.0:+2.0 \
+  --prefix ./jobs/ --catalog jobs.idx --jobs-per-directory=8 water.com
+
+$ cat jobs.idx
+[1:./jobs/0/1/water.com] {"HOH":114.0,"OH":0.8}
+[2:./jobs/0/2/water.com] {"HOH":116.0,"OH":0.8}
+[3:./jobs/0/3/water.com] {"HOH":118.0,"OH":0.8}
+[4:./jobs/0/4/water.com] {"HOH":120.0,"OH":0.8}
+[5:./jobs/0/5/water.com] {"HOH":122.0,"OH":0.8}
+[6:./jobs/0/6/water.com] {"HOH":114.0,"OH":0.9}
+[7:./jobs/0/7/water.com] {"HOH":116.0,"OH":0.9}
+[8:./jobs/0/8/water.com] {"HOH":118.0,"OH":0.9}
+[9:./jobs/1/9/water.com] {"HOH":120.0,"OH":0.9}
+[10:./jobs/1/10/water.com] {"HOH":122.0,"OH":0.9}
+[11:./jobs/1/11/water.com] {"HOH":114.0,"OH":1.0}
+[12:./jobs/1/12/water.com] {"HOH":116.0,"OH":1.0}
+[13:./jobs/1/13/water.com] {"HOH":118.0,"OH":1.0}
+[14:./jobs/1/14/water.com] {"HOH":120.0,"OH":1.0}
+[15:./jobs/1/15/water.com] {"HOH":122.0,"OH":1.0}
+```
+
+Note that there are 8 jobs under the `./jobs/0/` directory and the remaining 7 jobs are under `./jobs/1/`.  Dropping to 3 jobs per directory:
+
+```
+$ rm -rf jobs.idx jobs
+$ job-templating-tool --parameter OH=0.8-1.0:+0.1 --parameter HOH=114.0-122.0:+2.0 \
+  --prefix ./jobs/ --catalog jobs.idx --jobs-per-directory=3 water.com
+
+$ cat jobs.idx
+[1:./jobs/0/0/1/water.com] {"HOH":114.0,"OH":0.8}
+[2:./jobs/0/0/2/water.com] {"HOH":116.0,"OH":0.8}
+[3:./jobs/0/0/3/water.com] {"HOH":118.0,"OH":0.8}
+[4:./jobs/0/1/4/water.com] {"HOH":120.0,"OH":0.8}
+[5:./jobs/0/1/5/water.com] {"HOH":122.0,"OH":0.8}
+[6:./jobs/0/1/6/water.com] {"HOH":114.0,"OH":0.9}
+[7:./jobs/0/2/7/water.com] {"HOH":116.0,"OH":0.9}
+[8:./jobs/0/2/8/water.com] {"HOH":118.0,"OH":0.9}
+[9:./jobs/0/2/9/water.com] {"HOH":120.0,"OH":0.9}
+[10:./jobs/1/3/10/water.com] {"HOH":122.0,"OH":0.9}
+[11:./jobs/1/3/11/water.com] {"HOH":114.0,"OH":1.0}
+[12:./jobs/1/3/12/water.com] {"HOH":116.0,"OH":1.0}
+[13:./jobs/1/4/13/water.com] {"HOH":118.0,"OH":1.0}
+[14:./jobs/1/4/14/water.com] {"HOH":120.0,"OH":1.0}
+[15:./jobs/1/4/15/water.com] {"HOH":122.0,"OH":1.0}
+```
+
+The hierarchy is one level deeper now to ensure that each directory contains at most 3 child directories.
+
+#### Array dimensioning
+
+In both cases above, the program assumed two things about the job array being produced:
+
+1. The base index of the array is the same as the `--array-index/-a` (in this case, the default of 1).
+2. The array size matches the number of parameter combinations produced.
+
+These are the default behaviors of the program.  However, in some cases the user may want to generate templated jobs within a larger overall job array.  Consider a job array meant to have a base index of 100 and a size of 1000 jobs; the 15 Gaussian jobs are meant to start at index 510.  The following illustrates how these jobs are created:
+
+```
+$ rm -rf jobs.idx jobs
+$ job-templating-tool --parameter OH=0.8-1.0:+0.1 --parameter HOH=114.0-122.0:+2.0 \
+  --prefix ./jobs/ --catalog jobs.idx --array-size=1000 --array-base-index=100 \
+  --array-index=510 --jobs-per-directory=50 water.com
+
+$ cat jobs.idx
+[510:./jobs/8/510/water.com] {"HOH":114.0,"OH":0.8}
+[511:./jobs/8/511/water.com] {"HOH":116.0,"OH":0.8}
+[512:./jobs/8/512/water.com] {"HOH":118.0,"OH":0.8}
+[513:./jobs/8/513/water.com] {"HOH":120.0,"OH":0.8}
+[514:./jobs/8/514/water.com] {"HOH":122.0,"OH":0.8}
+[515:./jobs/8/515/water.com] {"HOH":114.0,"OH":0.9}
+[516:./jobs/8/516/water.com] {"HOH":116.0,"OH":0.9}
+[517:./jobs/8/517/water.com] {"HOH":118.0,"OH":0.9}
+[518:./jobs/8/518/water.com] {"HOH":120.0,"OH":0.9}
+[519:./jobs/8/519/water.com] {"HOH":122.0,"OH":0.9}
+[520:./jobs/8/520/water.com] {"HOH":114.0,"OH":1.0}
+[521:./jobs/8/521/water.com] {"HOH":116.0,"OH":1.0}
+[522:./jobs/8/522/water.com] {"HOH":118.0,"OH":1.0}
+[523:./jobs/8/523/water.com] {"HOH":120.0,"OH":1.0}
+[524:./jobs/8/524/water.com] {"HOH":122.0,"OH":1.0}
+```
+
+Now assume a different parameterization which holds the O–H bond length constant at 1.45 and scans the H–O–H angle, and is inserted into the overall array at index 680:
+
+```
+$ job-templating-tool --parameter OH=1.45 --parameter HOH=114.0-122.0:+2.0 \
+  --prefix ./jobs/ --catalog jobs.idx --append-to-catalog --array-size=1000 \
+  --array-base-index=100 --array-index=680 --jobs-per-directory=50 water.com
+
+$ cat jobs.idx
+[510:./jobs/8/510/water.com] {"HOH":114.0,"OH":0.8}
+[511:./jobs/8/511/water.com] {"HOH":116.0,"OH":0.8}
+[512:./jobs/8/512/water.com] {"HOH":118.0,"OH":0.8}
+[513:./jobs/8/513/water.com] {"HOH":120.0,"OH":0.8}
+[514:./jobs/8/514/water.com] {"HOH":122.0,"OH":0.8}
+[515:./jobs/8/515/water.com] {"HOH":114.0,"OH":0.9}
+[516:./jobs/8/516/water.com] {"HOH":116.0,"OH":0.9}
+[517:./jobs/8/517/water.com] {"HOH":118.0,"OH":0.9}
+[518:./jobs/8/518/water.com] {"HOH":120.0,"OH":0.9}
+[519:./jobs/8/519/water.com] {"HOH":122.0,"OH":0.9}
+[520:./jobs/8/520/water.com] {"HOH":114.0,"OH":1.0}
+[521:./jobs/8/521/water.com] {"HOH":116.0,"OH":1.0}
+[522:./jobs/8/522/water.com] {"HOH":118.0,"OH":1.0}
+[523:./jobs/8/523/water.com] {"HOH":120.0,"OH":1.0}
+[524:./jobs/8/524/water.com] {"HOH":122.0,"OH":1.0}
+[680:./jobs/11/680/water.com] {"HOH":114.0,"OH":1.45}
+[681:./jobs/11/681/water.com] {"HOH":116.0,"OH":1.45}
+[682:./jobs/11/682/water.com] {"HOH":118.0,"OH":1.45}
+[683:./jobs/11/683/water.com] {"HOH":120.0,"OH":1.45}
+[684:./jobs/11/684/water.com] {"HOH":122.0,"OH":1.45}
+```
+
+#### Copying and symlinking files into job directories
+
+In many cases there may be additional files/directories that must also be present in each job array index's directory.  For anything that is read-only during the job, try adding a symbolic link to the original file/directory using the `--symlink` option.  For files that will be modified during execution of the job, the file/directory can be copied into the job directory using the `--copy` flag.
+
+Assume for our Gaussian example there is a checkpoint file that will be read to get the coordinates and basis set for the calculation.  Since Gaussian alters that checkpoint file during execution, it must be copied into the job directories:
+
+```
+$ rm -rf jobs.idx jobs
+$ job-templating-tool --parameter OH=0.8-1.0:+0.1 --parameter HOH=114.0-122.0:+2.0 \
+  --prefix ./jobs/ --catalog jobs.idx --copy=water.chk water.com
+
+$ ls -l jobs/1
+total 22
+-rw-r--r-- 1 frey sysadmin 50 May 10 13:52 water.chk
+-rw-r--r-- 1 frey sysadmin 69 May 10 13:46 water.com
+```
+
+Now assume that the job script that will process this array includes a post-processing step after Gaussian completes execution.  A large data set must be present in the working directory named `fields.db` but is only read (never written).  In this case, a symlink is appropriate:
+
+ ```
+$ rm -rf jobs.idx jobs
+$ job-templating-tool --parameter OH=0.8-1.0:+0.1 --parameter HOH=114.0-122.0:+2.0 \
+  --prefix ./jobs/ --catalog jobs.idx --copy=water.chk --symlink ../fields.db \
+  water.com
+
+$ ls -l jobs/1
+total 2
+lrwxrwxrwx 1 frey sysadmin 18 May 10 14:41 fields.db -> ../../../fields.db
+-rw-r--r-- 1 frey sysadmin 50 May 10 13:52 water.chk
+-rw-r--r-- 1 frey sysadmin 69 May 10 14:41 water.com
+```
