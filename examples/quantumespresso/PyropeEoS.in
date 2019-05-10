@@ -1,0 +1,64 @@
+&CONTROL
+  calculation='relax',
+  pseudo_dir="[{% print Pseudo_Dir %}]/",
+  restart_mode= 'from_scratch',
+  nstep = 200,
+/
+
+&SYSTEM
+  ibrav=0,
+  nat=20,
+  ntyp=3,
+  ecutwfc=75,
+  ecutrho=580,
+  occupations='smearing',
+  smearing='methfessel-paxton',
+  degauss=0.1,
+/
+
+&ELECTRONS
+  diagonalization='david',
+  conv_thr=1d-07,
+  mixing_mode='plain',
+  mixing_beta=0.100,
+/
+
+&IONS
+  ion_dynamics = "bfgs",
+/
+
+ATOMIC_SPECIES
+  Cu 63.546000 Cu.pbe-dn-rrkjus_psl.0.2.UPF
+  C 12.010700 C.pbe-n-rrkjus_psl.0.1.UPF
+  H 1.00794 H.pbe-rrkjus_psl.0.1.UPF
+
+ATOMIC_POSITIONS {angstrom}
+Cu 1.278140056 1.278140056 1.814776220
+Cu 1.278131817 3.834204212 1.806147729
+Cu 3.834204212 1.278131817 1.806147729
+Cu 3.834210367 3.834210367 1.804822002
+Cu -0.006619099 -0.006619099 3.595471619
+Cu -0.006676477 2.562954872 3.595620850
+Cu 2.562954872 -0.006676477 3.595620850
+Cu 2.563004089 2.563004089 3.595734789
+Cu 1.278262339 1.278262339 5.405005413
+Cu 1.278703288 3.834814013 5.436136530
+Cu 3.834814013 1.278703288 5.436136530
+Cu 3.834495413 3.834495413 5.504248241
+Cu 0.011423191 0.011423191 7.247866519 0 0 0
+Cu 0.012821688 2.545596406 7.248726915 0 0 0
+Cu 2.545596406 0.012821688 7.248726915 0 0 0
+Cu 2.544121075 2.544121075 7.249496924 0 0 0
+C 1.277061817 1.277061817 [{% Cpos = CH_base_offset + CH_offset; print '{0:.9f}'.format(Cpos) %}] 0 0 0
+H 0.534287573 0.534287573 [{% Hpos = Cpos + CH_bond; print '{0:.9f}'.format(Hpos) %}]
+H 2.291992439 1.005310921 [{% print '{0:.9f}'.format(Hpos) %}]
+H 1.005310921 2.291992439 [{% print '{0:.9f}'.format(Hpos) %}]
+
+K_POINTS {automatic}
+  4 4 1 0 0 0
+
+CELL_PARAMETERS {angstrom}
+   5.112330000 0.000000000 0.000000000
+   0.000000000 5.112330000 0.000000000
+   0.000000000 0.000000000 20.00000000
+
