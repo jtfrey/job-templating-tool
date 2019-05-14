@@ -128,14 +128,18 @@ See the [examples](./examples) directory for sample templates.
 ```
 $ job-templating-tool --help
 usage: job-templating-tool [-h] [--version] [--verbose] [--quiet]
-                           [--parameter <param-spec>] [--catalog <filepath>]
-                           [--append-to-catalog] [--array-index <integer>]
-                           [--use-flat-layout] [--prefix <prefix>]
+                           [--catalog <filepath>] [--append-to-catalog]
+                           [--array-index <integer>] [--use-flat-layout]
+                           [--prefix <prefix>]
                            [--index-format-in-paths <python-conversion>]
                            [--ignore-templating-errors]
+                           [--yaml-parameters <yaml-file>]
+                           [--json-parameters <json-file>]
+                           [--csv-parameters <csv-file>]
+                           [--parameter <param-spec>]
                            [--jobs-per-directory <count>] [--copy <filepath>]
-                           [--symlink <filepath>] [--array-base-index <index>]
-                           [--array-size <count>]
+                           [--symlink <filepath>] [--no-relative-targets]
+                           [--array-base-index <index>] [--array-size <count>]
                            <template-file> [<template-file> ...]
 
 generate templated job arrays
@@ -151,9 +155,6 @@ optional arguments:
                         executes
   --quiet, -q           decrease the amount of output produced as this program
                         executes
-  --parameter <param-spec>, -p <param-spec>
-                        add a named parameter to the scan; if the parameter
-                        has a single value no scan is implied
   --catalog <filepath>, -c <filepath>
                         filename to which the indexing catalog (that maps job
                         array index to parameter values) should be written;
@@ -182,6 +183,22 @@ optional arguments:
                         do not exit on templating errors, continue trying to
                         generate the rest of the templated content
 
+job parameters:
+  options that communication job parameters to the templater
+
+  --yaml-parameters <yaml-file>
+                        read the array of parameters from a YAML file
+  --json-parameters <json-file>
+                        read the array of parameters from a JSON file
+  --csv-parameters <csv-file>
+                        read the array of parameters from a CSV file; the
+                        first row should contain the variable names for each
+                        column
+  --parameter <param-spec>, -p <param-spec>
+                        add a named parameter to the scan; named parameters
+                        augment an array specified via --yaml-parameters,
+                        --json-parameters, --csv-parameters
+
 directory mode:
   options available when not doing flat layout
 
@@ -199,6 +216,9 @@ directory mode:
   --symlink <filepath>, -s <filepath>
                         create a symbolic link to the given path in each job
                         subdirectory (can be specified multiple times)
+  --no-relative-targets
+                        for --symlink/-s, always use the absolute path of the
+                        target file/directory and not a relative path
   --array-base-index <index>
                         when used in conjuncation with --jobs-per-
                         directory/-j, this is the lowest possible index in the
