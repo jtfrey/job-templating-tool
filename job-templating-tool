@@ -375,32 +375,59 @@ def processInputTemplate(template_string, global_variables):
 TEMPLATING_OPTIONS_SHOULD_IGNORE_ERRORS = 1
 
 
-def __writeInputTemplates(input_templates, global_variables, job_array_index, options, catalog_stream):
+def __writeInputTemplates(input_templates, global_variables, parameters_array, job_array_index, options, catalog_stream):
     for input_template in input_templates:
-        # Get job index working directory setup:
-        global_variables['JOB_ARRAY_INDEX'] = job_array_index
-        try:
+        if parameters_array is None or len(parameters_array) == 0:
+            # Get job index working directory setup:
+            global_variables['JOB_ARRAY_INDEX'] = job_array_index
+            try:
+                logging.debug('processing template %s', input_template)
+                templated_content = TemplateCache.getTemplateContent(input_template)
+                templated_content = processInputTemplate(templated_content, global_variables)
+                output_path = TemplatePathHelper.templatePathToOutputPath(input_template, job_array_index)
+                logging.debug('  writing generated content to %s', output_path)
+                output_stream = open(output_path, 'w')
+                output_stream.write(templated_content)
+                output_stream.close()
+                global_variables.pop('JOB_ARRAY_INDEX', None)
+                if catalog_stream:
+                    logging.debug('  updating indexing catalog for job array index %d', job_array_index)
+                    catalog_stream.write('[{0:d}:{1:s}] {2:s}\n'.format(job_array_index, output_path, json.dumps(global_variables, separators=(',',':'))))
+                job_array_index = job_array_index + 1
+            except Exception as E:
+                logging.error('failed to generate %s for job array index %d: %s', input_template, job_array_index, str(E))
+                if (options & TEMPLATING_OPTIONS_SHOULD_IGNORE_ERRORS) == 0:
+                    sys.exit(1)
+        else:
             logging.debug('processing template %s', input_template)
-            templated_content = TemplateCache.getTemplateContent(input_template)
-            templated_content = processInputTemplate(templated_content, global_variables)
-            output_path = TemplatePathHelper.templatePathToOutputPath(input_template, job_array_index)
-            logging.debug('  writing generated content to %s', output_path)
-            output_stream = open(output_path, 'w')
-            output_stream.write(templated_content)
-            output_stream.close()
-            global_variables.pop('JOB_ARRAY_INDEX', None)
-            if catalog_stream:
-                logging.debug('  updating indexing catalog for job array index %d', job_array_index)
-                catalog_stream.write('[{0:d}:{1:s}] {2:s}\n'.format(job_array_index, output_path, json.dumps(global_variables, separators=(',',':'))))
-            job_array_index = job_array_index + 1
-        except Exception as E:
-            logging.error('failed to generate %s for job array index %d: %s', input_template, job_array_index, str(E))
-            if (options & TEMPLATING_OPTIONS_SHOULD_IGNORE_ERRORS) == 0:
-                sys.exit(1)
+            template_str = TemplateCache.getTemplateContent(input_template)
+            for array_params in parameters_array:
+                # Copy the parameter array entry...
+                globals = dict(array_params)
+                # ...add-in the globals we were passed...
+                globals.update(global_variables)
+                # ...set the job array index.
+                globals['JOB_ARRAY_INDEX'] = job_array_index
+                try:
+                    templated_content = processInputTemplate(template_str, globals)
+                    output_path = TemplatePathHelper.templatePathToOutputPath(input_template, job_array_index)
+                    logging.debug('  writing generated content to %s', output_path)
+                    output_stream = open(output_path, 'w')
+                    output_stream.write(templated_content)
+                    output_stream.close()
+                    globals.pop('JOB_ARRAY_INDEX', None)
+                    if catalog_stream:
+                        logging.debug('  updating indexing catalog for job array index %d', job_array_index)
+                        catalog_stream.write('[{0:d}:{1:s}] {2:s}\n'.format(job_array_index, output_path, json.dumps(globals, separators=(',',':'))))
+                    job_array_index = job_array_index + 1
+                except Exception as E:
+                    logging.error('failed to generate %s for job array index %d: %s', input_template, job_array_index, str(E))
+                    if (options & TEMPLATING_OPTIONS_SHOULD_IGNORE_ERRORS) == 0:
+                        sys.exit(1)
     return job_array_index
 
 
-def processInputTemplates(input_templates, global_variables, parameters, job_array_index=1, options=0, catalog_stream=None):
+def processInputTemplates(input_templates, global_variables, parameters, parameters_array, job_array_index=1, options=0, catalog_stream=None):
     """
     This recursive function pops the first Parameter off the parameters list and loops over it,
     calling this function with each value set in the variables list and passing the now-smaller
@@ -411,27 +438,27 @@ def processInputTemplates(input_templates, global_variables, parameters, job_arr
         parameter = parameters[0]
         remaining_parameters = parameters[1:]
         if len(remaining_parameters) > 0:
-            # Recurse down into the next parameter:
+            # Recurse down into the next named parameter:
             for pval in parameter.value_list:
                 global_variables[parameter.parameter_name] = pval
                 job_array_index = processInputTemplates(input_templates,
                 	                                    global_variables,
                 	                                    remaining_parameters,
+                	                                    parameters_array,
                 	                                    job_array_index=job_array_index,
                 	                                    options=options,
                 	                                    catalog_stream=catalog_stream)
             global_variables.pop(parameter.parameter_name, None)
         else:
-            # No more parameters, time to process the template files:
+            # No more named parameters, time to process the template files:
             for pval in parameter.value_list:
                 global_variables[parameter.parameter_name] = pval
-                job_array_index = __writeInputTemplates(input_templates, global_variables, job_array_index, options, catalog_stream)
+                job_array_index = __writeInputTemplates(input_templates, global_variables, parameters_array, job_array_index, options, catalog_stream)
             global_variables.pop(parameter.parameter_name, None)
     else:
-        # We get here if all of the parameters were single-valued:
-        job_array_index = __writeInputTemplates(input_templates, global_variables, job_array_index, options, catalog_stream)
+        # Special case, all of the named parameters were single-valued:
+        job_array_index = __writeInputTemplates(input_templates, global_variables, parameters_array, job_array_index, options, catalog_stream)
     return job_array_index
-
 
 
 
@@ -456,11 +483,6 @@ cli_parser.add_argument('--quiet', '-q',
                         default=0,
                         action='count',
                         help='decrease the amount of output produced as this program executes')
-cli_parser.add_argument('--parameter', '-p',
-                        metavar='<param-spec>',
-                        dest='parameters',
-                        action='append',
-                        help='add a named parameter to the scan; if the parameter has a single value no scan is implied')
 cli_parser.add_argument('--catalog', '-c',
                         metavar='<filepath>',
                         dest='catalog_path',
@@ -496,6 +518,69 @@ cli_parser.add_argument('--ignore-templating-errors',
                         action='store_true',
                         default=False,
                         help='do not exit on templating errors, continue trying to generate the rest of the templated content')
+
+#
+# Give the parameter options their own group:
+#
+cli_parser_parameters = cli_parser.add_argument_group(
+                        title='job parameters',
+                        description='options that communication job parameters to the templater')
+#
+# Add --yaml-parameters if this Python has support for it:
+#
+have_param_array_flags = []
+try:
+    from yaml import load as yaml_load
+    try:
+        from yaml import CLoader as yaml_loader
+    except ImportError:
+        from yaml import Loader as yaml_loader
+
+    cli_parser_parameters.add_argument('--yaml-parameters',
+                        metavar='<yaml-file>',
+                        dest='yaml_parameters_file',
+                        help='read the array of parameters from a YAML file')
+    have_param_array_flags.append('--yaml-parameters')
+except:
+    pass
+#
+# Add --json-parameters if this Python has support for it:
+#
+try:
+    import json
+
+    cli_parser_parameters.add_argument('--json-parameters',
+                    metavar='<json-file>',
+                    dest='json_parameters_file',
+                    help='read the array of parameters from a JSON file')
+    have_param_array_flags.append('--json-parameters')
+except:
+    pass
+#
+# Add --csv-parameters if this Python has support for it:
+#
+try:
+    import csv
+
+    cli_parser_parameters.add_argument('--csv-parameters',
+                        metavar='<csv-file>',
+                        dest='csv_parameters_file',
+                        help='read the array of parameters from a CSV file; the first row should contain the variable names for each column')
+    have_param_array_flags.append('--csv-parameters')
+except:
+    pass
+
+#
+# Add the named parameters option:
+#
+help_str = 'add a named parameter to the scan'
+if len(have_param_array_flags) > 0:
+    help_str = help_str + '; named parameters augment an array specified via ' + ', '.join(have_param_array_flags)
+cli_parser_parameters.add_argument('--parameter', '-p',
+                        metavar='<param-spec>',
+                        dest='parameters',
+                        action='append',
+                        help=help_str)
 
 #
 # Directory mode options go in their own subgroup:
@@ -621,44 +706,105 @@ input_template_count = len(input_templates)
 logging.info('%d input templates to process', input_template_count)
 
 
-# No parameters?
-if cli_args.parameters is None or len(cli_args.parameters) == 0:
-    logging.critical('no parameters were provided, so this is not a parameter scan calculation')
-    cli_parser.print_usage()
+# Any parameter array to import?
+parameters_array = []
+has_yaml_params = 1 if (hasattr(cli_args, 'yaml_parameters_file') and cli_args.yaml_parameters_file) else 0
+has_json_params = 1 if (hasattr(cli_args, 'json_parameters_file') and cli_args.json_parameters_file) else 0
+has_csv_params = 1 if (hasattr(cli_args, 'csv_parameters_file') and cli_args.csv_parameters_file) else 0
+if (has_yaml_params + has_json_params + has_csv_params) > 1:
+    logging.error('only a single parameter array can be specified')
     sys.exit(errno.EINVAL)
-logging.debug('%d initial parameters from CLI', len(cli_args.parameters))
-
-# Drop any empty parameters:
-parameters = filter(lambda p: len(p) != 0, [p.strip() for p in cli_args.parameters])
-if len(parameters) == 0:
-    logging.critical('no parameters were provided, so this is not a parameter scan calculation')
-    cli_parser.print_usage()
-    sys.exit(errno.EINVAL)
-logging.debug('%d parameters after empty filtering', len(cli_args.parameters))
-
-
-# Process the parameters:
-compiled_parameters = list()
-logging.debug('compiling parameters into value lists')
-for parameter in parameters:
-    logging.debug('compiling parameter specification: %s', parameter)
-
-    # Split on the first equals sign:
-    parameter = parameter.split('=', 1)
-
-    # Must have two components:
-    if len(parameter) < 2:
-        logging.error('invalid parameter %s:  no value provided', parameter[0])
-        sys.exit(errno.EINVAL)
-
-    # Try to turn the value into a Parameter object:
+if has_yaml_params:
     try:
-        p = Parameter(parameter[0], parameter[1])
-        compiled_parameters.append(p)
-        logging.info('added parameter %s = %s', p.parameter_name, str(p.value_list))
+        with open(cli_args.yaml_parameters_file, 'rb') as f:
+            yaml_data = yaml_load(f, Loader=yaml_loader)
+            if not isinstance(yaml_data, list):
+                logging.error('a YAML parameter file must be an array of dictionaries')
+                sys.exit(errno.EINVAL)
+            for row in yaml_data:
+                if not isinstance(row, dict):
+                    logging.error('a YAML parameter file must be an array of dictionaries')
+                    sys.exit(errno.EINVAL)
+            parameters_array = yaml_data
     except Exception as E:
-        logging.error('invalid parameter %s:  %s', parameter[0], str(E))
+        logging.error('unable to read YAML parameter array: %s', str(E))
         sys.exit(errno.EINVAL)
+elif has_json_params:
+    try:
+        with open(cli_args.json_parameters_file, 'rb') as f:
+            json_data = json.loads(f.read())
+            if not isinstance(json_data, list):
+                logging.error('a JSON parameter file must be an array of dictionaries')
+                sys.exit(errno.EINVAL)
+            for row in json_data:
+                if not isinstance(row, dict):
+                    logging.error('a JSON parameter file must be an array of dictionaries')
+                    sys.exit(errno.EINVAL)
+            parameters_array = json_data
+    except Exception as E:
+        logging.error('unable to read JSON parameter array: %s', str(E))
+        sys.exit(errno.EINVAL)
+elif has_csv_params:
+    try:
+        with open(cli_args.csv_parameters_file, 'rb') as f:
+            csv_reader = csv.DictReader(f)
+            parameters_array.extend(csv_reader)
+    except Exception as E:
+        logging.error('unable to read CSV parameter array: %s', str(E))
+        sys.exit(errno.EINVAL)
+
+
+# No parameters?
+if (cli_args.parameters is None or len(cli_args.parameters) == 0) and len(parameters_array) == 0:
+    logging.critical('no parameters were provided, so this is not a parameter scan calculation')
+    cli_parser.print_usage()
+    sys.exit(errno.EINVAL)
+
+global_variables = {}
+final_parameters = []
+if cli_args.parameters:
+    logging.debug('%d initial parameters from CLI', len(cli_args.parameters))
+
+    # Drop any empty parameters:
+    parameters = filter(lambda p: len(p) != 0, [p.strip() for p in cli_args.parameters])
+    if len(parameters) == 0 and len(parameters_array) == 0:
+        logging.critical('no parameters were provided, so this is not a parameter scan calculation')
+        cli_parser.print_usage()
+        sys.exit(errno.EINVAL)
+    logging.debug('%d parameters after empty filtering', len(cli_args.parameters))
+
+
+    # Process the parameters:
+    logging.debug('compiling parameters into value lists')
+    for parameter in parameters:
+        logging.debug('compiling parameter specification: %s', parameter)
+
+        # Split on the first equals sign:
+        parameter = parameter.split('=', 1)
+
+        # Must have two components:
+        if len(parameter) < 2:
+            logging.error('invalid parameter %s:  no value provided', parameter[0])
+            sys.exit(errno.EINVAL)
+
+        # Try to turn the value into a Parameter object:
+        try:
+            p = Parameter(parameter[0], parameter[1])
+            compiled_parameters.append(p)
+            logging.info('added parameter %s = %s', p.parameter_name, str(p.value_list))
+        except Exception as E:
+            logging.error('invalid parameter %s:  %s', parameter[0], str(E))
+            sys.exit(errno.EINVAL)
+
+
+    # Let's eliminate any single-valued parameters by coallescing them into the
+    # global variable space; that way we don't need to recurse over them:
+    for p in compiled_parameters:
+        if len(p.value_list) == 1:
+            global_variables[p.parameter_name] = p.value_list[0]
+        else:
+            final_parameters.append(p)
+    logging.debug('global variable space after parameter reduction: %s', str(global_variables))
 
 
 # Are we supposed to write out an indexing catalog?
@@ -676,20 +822,10 @@ if cli_args.catalog_path:
             sys.exit(errno.EPERM)
 
 
-# Let's eliminate any single-valued parameters by coallescing them into the
-# global variable space; that way we don't need to recurse over them:
-global_variables = {}
-final_parameters = []
-for p in compiled_parameters:
-    if len(p.value_list) == 1:
-        global_variables[p.parameter_name] = p.value_list[0]
-    else:
-        final_parameters.append(p)
-logging.debug('global variable space after parameter reduction: %s', str(global_variables))
-
-
 # So how many files are we going to generate?
-param_combination_count = reduce((lambda a, b: a * b), [len(p.value_list) for p in final_parameters], 1)
+param_combination_count = len(parameters_array) if parameters_array else 1
+if final_parameters:
+    param_combination_count = param_combination_count * reduce((lambda a, b: a * b), [len(p.value_list) for p in final_parameters], 1)
 logging.info('total parameter combinations %d', param_combination_count)
 if cli_args.array_size == 0:
     cli_args.array_size = param_combination_count
@@ -853,6 +989,7 @@ try:
     job_index = processInputTemplates(input_templates,
                                       global_variables,
                                       final_parameters,
+                                      parameters_array,
                                       job_array_index=cli_args.array_index,
                                       options=templating_options,
                                       catalog_stream=catalog_stream)

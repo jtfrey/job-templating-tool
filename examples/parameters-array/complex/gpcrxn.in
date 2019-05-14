@@ -1,0 +1,7 @@
+%
+% GAS PHASE CHEMISTRY
+%
+id       [{% print runid %}]
+species  [{% print ','.join(materials) %}]
+thermo   [{% print '{0:.2f}'.format(temperature) %}] kelvin
+%

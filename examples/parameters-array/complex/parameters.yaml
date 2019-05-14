@@ -1,0 +1,17 @@
+#
+# Gas Phase Chemistry Rxn input file parameters
+#
+- runid: 25634-678
+  materials:
+    - C2H2
+    - O2
+    - H2
+    - CO
+  temperature: 273.15
+- runid: 25634-679
+  materials:
+    - C2H2
+    - O2
+    - H2
+    - CO
+  temperature: 283.15
