@@ -13,6 +13,7 @@ import errno
 import StringIO
 import contextlib
 import json
+import shutil
 
 #
 # The Scriptlet class is used to execute Python code found in the
@@ -75,6 +76,7 @@ class TemplateCache(object):
         if path != '-':
             path = os.path.abspath(path)
         if path in cls._cached_content:
+            logging.debug('cached template %s used', path)
             return '' + cls._cached_content[path]
         logging.debug('initial read of template %s', path)
         if path == '-':
@@ -373,57 +375,75 @@ def processInputTemplate(template_string, global_variables):
 
 
 TEMPLATING_OPTIONS_SHOULD_IGNORE_ERRORS = 1
+TEMPLATING_OPTIONS_SHOULD_NOT_MATCH_PERMISSIONS = 2
 
 
 def __writeInputTemplates(input_templates, global_variables, parameters_array, job_array_index, options, catalog_stream):
-    for input_template in input_templates:
-        if parameters_array is None or len(parameters_array) == 0:
-            # Get job index working directory setup:
-            global_variables['JOB_ARRAY_INDEX'] = job_array_index
+    # Get job index working directory setup:
+    global_variables['JOB_ARRAY_INDEX'] = job_array_index
+    
+    if parameters_array is None or len(parameters_array) == 0:
+        output_paths = []
+        for input_template in input_templates:
             try:
-                logging.debug('processing template %s', input_template)
-                templated_content = TemplateCache.getTemplateContent(input_template)
-                templated_content = processInputTemplate(templated_content, global_variables)
+                templated_content = processInputTemplate(TemplateCache.getTemplateContent(input_template), global_variables)
                 output_path = TemplatePathHelper.templatePathToOutputPath(input_template, job_array_index)
-                logging.debug('  writing generated content to %s', output_path)
-                output_stream = open(output_path, 'w')
-                output_stream.write(templated_content)
-                output_stream.close()
-                global_variables.pop('JOB_ARRAY_INDEX', None)
-                if catalog_stream:
-                    logging.debug('  updating indexing catalog for job array index %d', job_array_index)
-                    catalog_stream.write('[{0:d}:{1:s}] {2:s}\n'.format(job_array_index, output_path, json.dumps(global_variables, separators=(',',':'))))
-                job_array_index = job_array_index + 1
+                logging.debug('  writing generated content for %s to %s', input_template, output_path)
+                with open(output_path, 'w') as output_stream:
+                    output_stream.write(templated_content)
+                if (options & TEMPLATING_OPTIONS_SHOULD_NOT_MATCH_PERMISSIONS) == 0 and not os.path.islink(output_path):
+                    shutil.copymode(input_template, output_path)
+                output_paths.append(output_path)
             except Exception as E:
                 logging.error('failed to generate %s for job array index %d: %s', input_template, job_array_index, str(E))
                 if (options & TEMPLATING_OPTIONS_SHOULD_IGNORE_ERRORS) == 0:
                     sys.exit(1)
-        else:
-            logging.debug('processing template %s', input_template)
-            template_str = TemplateCache.getTemplateContent(input_template)
-            for array_params in parameters_array:
-                # Copy the parameter array entry...
-                globals = dict(array_params)
-                # ...add-in the globals we were passed...
-                globals.update(global_variables)
-                # ...set the job array index.
-                globals['JOB_ARRAY_INDEX'] = job_array_index
+        global_variables.pop('JOB_ARRAY_INDEX', None)
+        if catalog_stream:
+            logging.debug('  updating indexing catalog for job array index %d', job_array_index)
+            catalog_stream.write('[{0:d}:{1:s}] {{ "globals": {2:s}, "files": {3:s} }}\n'.format(
+                    job_array_index,
+                    TemplatePathHelper.directoryPrefixForJobArrayIndex(job_array_index),
+                    json.dumps(global_variables, separators=(',',':')),
+                    json.dumps(output_paths, separators=(',',':')))
+                )
+        job_array_index = job_array_index + 1
+    else:
+        for array_params in parameters_array:
+            output_paths = []
+            output_dir = TemplatePathHelper.directoryPrefixForJobArrayIndex(job_array_index)
+            
+            # Copy the parameter array entry...
+            globals = dict(array_params)
+            # ...add-in the globals we were passed...
+            globals.update(global_variables)
+            # ...set the job array index.
+            globals['JOB_ARRAY_INDEX'] = job_array_index
+            for input_template in input_templates:
                 try:
-                    templated_content = processInputTemplate(template_str, globals)
+                    templated_content = processInputTemplate(TemplateCache.getTemplateContent(input_template), globals)
                     output_path = TemplatePathHelper.templatePathToOutputPath(input_template, job_array_index)
-                    logging.debug('  writing generated content to %s', output_path)
-                    output_stream = open(output_path, 'w')
-                    output_stream.write(templated_content)
-                    output_stream.close()
-                    globals.pop('JOB_ARRAY_INDEX', None)
-                    if catalog_stream:
-                        logging.debug('  updating indexing catalog for job array index %d', job_array_index)
-                        catalog_stream.write('[{0:d}:{1:s}] {2:s}\n'.format(job_array_index, output_path, json.dumps(globals, separators=(',',':'))))
-                    job_array_index = job_array_index + 1
+                    logging.debug('  writing generated content for %s to %s', input_template, output_path)
+                    with open(output_path, 'w') as output_stream:
+                        output_stream.write(templated_content)
+                    if (options & TEMPLATING_OPTIONS_SHOULD_NOT_MATCH_PERMISSIONS) == 0 and not os.path.islink(output_path):
+                        shutil.copymode(input_template, output_path)
+                    output_paths.append(output_path)
                 except Exception as E:
                     logging.error('failed to generate %s for job array index %d: %s', input_template, job_array_index, str(E))
                     if (options & TEMPLATING_OPTIONS_SHOULD_IGNORE_ERRORS) == 0:
                         sys.exit(1)
+            globals.pop('JOB_ARRAY_INDEX', None)
+            if catalog_stream:
+                logging.debug('  updating indexing catalog for job array index %d', job_array_index)
+                print(str(output_dir))
+                catalog_stream.write('[{0:d}:{1:s}] {{ "globals": {2:s}, "files": {3:s} }}\n'.format(
+                        job_array_index,
+                        TemplatePathHelper.directoryPrefixForJobArrayIndex(job_array_index),
+                        json.dumps(globals, separators=(',',':')),
+                        json.dumps(output_paths, separators=(',',':')))
+                    )
+            job_array_index = job_array_index + 1
     return job_array_index
 
 
@@ -518,6 +538,11 @@ cli_parser.add_argument('--ignore-templating-errors',
                         action='store_true',
                         default=False,
                         help='do not exit on templating errors, continue trying to generate the rest of the templated content')
+cli_parser.add_argument('--no-match-permissions',
+                        dest='should_match_permissions',
+                        action='store_false',
+                        default=True,
+                        help='do NOT copy file permissions from the original template files to the generated files')
 
 #
 # Give the parameter options their own group:
@@ -543,19 +568,16 @@ try:
     have_param_array_flags.append('--yaml-parameters')
 except:
     pass
+
 #
 # Add --json-parameters if this Python has support for it:
 #
-try:
-    import json
+cli_parser_parameters.add_argument('--json-parameters',
+                metavar='<json-file>',
+                dest='json_parameters_file',
+                help='read the array of parameters from a JSON file')
+have_param_array_flags.append('--json-parameters')
 
-    cli_parser_parameters.add_argument('--json-parameters',
-                    metavar='<json-file>',
-                    dest='json_parameters_file',
-                    help='read the array of parameters from a JSON file')
-    have_param_array_flags.append('--json-parameters')
-except:
-    pass
 #
 # Add --csv-parameters if this Python has support for it:
 #
@@ -776,6 +798,7 @@ if cli_args.parameters:
 
     # Process the parameters:
     logging.debug('compiling parameters into value lists')
+    compiled_parameters = []
     for parameter in parameters:
         logging.debug('compiling parameter specification: %s', parameter)
 
@@ -830,7 +853,7 @@ logging.info('total parameter combinations %d', param_combination_count)
 if cli_args.array_size == 0:
     cli_args.array_size = param_combination_count
 input_template_count = len(input_templates)
-logging.info('will generate %d file(s)', param_combination_count * input_template_count)
+logging.info('will generate %d file(s) in %d indices', param_combination_count * input_template_count, param_combination_count)
 
 
 # Create our functions that transforms input paths into output paths, based on
@@ -848,6 +871,20 @@ if cli_args.use_flat_layout:
         path_prefix_is_dir = cli.args.prefix.endswith(os.sep)
         path_prefix_is_dir_created = False
 
+        @staticmethod
+        def mkdir_p(path, mode=0777):
+            if path != '':
+                # Split the path into components:
+                path_components = os.path.split(path)
+                if os.path.exists(path_components[0]):
+                    os.mkdir(path, mode)
+                else:
+                    TemplatePathHelper.mkdir_p(path_components[0], mode)
+                    os.mkdir(path, mode)
+        @classmethod
+        def directoryPrefixForJobArrayIndex(cls, job_array_index):
+            return ''
+
         @classmethod
         def templatePathToOutputPath(cls, template_path, job_array_index):
             if cls.path_prefix_is_dir and not path_prefix_is_dir_created:
@@ -862,8 +899,6 @@ if cli_args.use_flat_layout:
             return filename_components[0] + '_' + cls.index_to_string_format.format(job_array_index) + filename_components[1]
 
 else:
-    import shutil
-
     class TemplatePathHelper(object):
         """
         This variant of TemplatePathHelper creates a directory (under the prefix specified
@@ -984,7 +1019,9 @@ else:
 # Go ahead and do it!
 templating_options = 0
 if cli_args.should_ignore_templating_errors:
-    templating_options = templating_options | TEMPLATING_OPTIONS_SHOULD_IGNORE_ERRORS;
+    templating_options = templating_options | TEMPLATING_OPTIONS_SHOULD_IGNORE_ERRORS
+if not cli_args.should_match_permissions:
+    templating_options = templating_options | TEMPLATING_OPTIONS_SHOULD_NOT_MATCH_PERMISSIONS
 try:
     job_index = processInputTemplates(input_templates,
                                       global_variables,

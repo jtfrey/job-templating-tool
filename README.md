@@ -133,6 +133,7 @@ usage: job-templating-tool [-h] [--version] [--verbose] [--quiet]
                            [--prefix <prefix>]
                            [--index-format-in-paths <python-conversion>]
                            [--ignore-templating-errors]
+                           [--no-match-permissions]
                            [--yaml-parameters <yaml-file>]
                            [--json-parameters <json-file>]
                            [--csv-parameters <csv-file>]
@@ -182,6 +183,9 @@ optional arguments:
   --ignore-templating-errors
                         do not exit on templating errors, continue trying to
                         generate the rest of the templated content
+  --no-match-permissions
+                        do NOT copy file permissions from the original
+                        template files to the generated files
 
 job parameters:
   options that communication job parameters to the templater
@@ -235,6 +239,7 @@ any characters except equals (=). The <value-list> is a comma-separated list
 of integer/float values; comma-separated list of integer/float ranges with
 optional step size (:1 or :1.5) or division count (/10); or comma-separated
 list of strings, optionally quote delimited.
+
 ```
 
 ### Parameter definitions
