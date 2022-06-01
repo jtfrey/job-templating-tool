@@ -375,7 +375,7 @@ def processInputTemplate(template_string, global_variables):
 
 
 TEMPLATING_OPTIONS_SHOULD_IGNORE_ERRORS = 1
-TEMPLATING_OPTIONS_SHOULD_NOT_MATCH_PERMISSIONS = 2
+TEMPLATING_OPTIONS_SHOULD_NOT_COPY_PERMISSIONS = 2
 
 
 def __writeInputTemplates(input_templates, global_variables, parameters_array, job_array_index, options, catalog_stream):
@@ -391,7 +391,7 @@ def __writeInputTemplates(input_templates, global_variables, parameters_array, j
                 logging.debug('  writing generated content for %s to %s', input_template, output_path)
                 with open(output_path, 'w') as output_stream:
                     output_stream.write(templated_content)
-                if (options & TEMPLATING_OPTIONS_SHOULD_NOT_MATCH_PERMISSIONS) == 0 and not os.path.islink(output_path):
+                if (options & TEMPLATING_OPTIONS_SHOULD_NOT_COPY_PERMISSIONS) == 0 and not os.path.islink(output_path):
                     shutil.copymode(input_template, output_path)
                 output_paths.append(output_path)
             except Exception as E:
@@ -401,7 +401,7 @@ def __writeInputTemplates(input_templates, global_variables, parameters_array, j
         global_variables.pop('JOB_ARRAY_INDEX', None)
         if catalog_stream:
             logging.debug('  updating indexing catalog for job array index %d', job_array_index)
-            catalog_stream.write('[{0:d}:{1:s}] {{ "globals": {2:s}, "files": {3:s} }}\n'.format(
+            catalog_stream.write('[{0:d}:{1:s}] {{ "parameters": {2:s}, "files": {3:s} }}\n'.format(
                     job_array_index,
                     TemplatePathHelper.directoryPrefixForJobArrayIndex(job_array_index),
                     json.dumps(global_variables, separators=(',',':')),
@@ -426,7 +426,7 @@ def __writeInputTemplates(input_templates, global_variables, parameters_array, j
                     logging.debug('  writing generated content for %s to %s', input_template, output_path)
                     with open(output_path, 'w') as output_stream:
                         output_stream.write(templated_content)
-                    if (options & TEMPLATING_OPTIONS_SHOULD_NOT_MATCH_PERMISSIONS) == 0 and not os.path.islink(output_path):
+                    if (options & TEMPLATING_OPTIONS_SHOULD_NOT_COPY_PERMISSIONS) == 0 and not os.path.islink(output_path):
                         shutil.copymode(input_template, output_path)
                     output_paths.append(output_path)
                 except Exception as E:
@@ -437,7 +437,7 @@ def __writeInputTemplates(input_templates, global_variables, parameters_array, j
             if catalog_stream:
                 logging.debug('  updating indexing catalog for job array index %d', job_array_index)
                 print(str(output_dir))
-                catalog_stream.write('[{0:d}:{1:s}] {{ "globals": {2:s}, "files": {3:s} }}\n'.format(
+                catalog_stream.write('[{0:d}:{1:s}] {{ "parameters": {2:s}, "files": {3:s} }}\n'.format(
                         job_array_index,
                         TemplatePathHelper.directoryPrefixForJobArrayIndex(job_array_index),
                         json.dumps(globals, separators=(',',':')),
@@ -538,8 +538,8 @@ cli_parser.add_argument('--ignore-templating-errors',
                         action='store_true',
                         default=False,
                         help='do not exit on templating errors, continue trying to generate the rest of the templated content')
-cli_parser.add_argument('--no-match-permissions',
-                        dest='should_match_permissions',
+cli_parser.add_argument('--no-copy-permissions',
+                        dest='should_copy_permissions',
                         action='store_false',
                         default=True,
                         help='do NOT copy file permissions from the original template files to the generated files')
@@ -1020,8 +1020,8 @@ else:
 templating_options = 0
 if cli_args.should_ignore_templating_errors:
     templating_options = templating_options | TEMPLATING_OPTIONS_SHOULD_IGNORE_ERRORS
-if not cli_args.should_match_permissions:
-    templating_options = templating_options | TEMPLATING_OPTIONS_SHOULD_NOT_MATCH_PERMISSIONS
+if not cli_args.should_copy_permissions:
+    templating_options = templating_options | TEMPLATING_OPTIONS_SHOULD_NOT_COPY_PERMISSIONS
 try:
     job_index = processInputTemplates(input_templates,
                                       global_variables,

@@ -49,7 +49,7 @@ $ job-templating-tool -vv --parameter OH=0.8-1.0:+0.1 --parameter HOH=114.0-122.
 [INFO] added parameter OH = [0.8, 0.9, 1.0]
 [INFO] added parameter HOH = [114.0, 116.0, 118.0, 120.0, 122.0]
 [INFO] total parameter combinations 15
-[INFO] will generate 15 file(s)
+[INFO] will generate 15 file(s) in 15 indices
 [INFO] next job array index in sequence would be 16
 
 $ ls -l jobs/run0001/
@@ -90,21 +90,21 @@ $ job-templating-tool --parameter OH=0.8-1.0:+0.1 --parameter HOH=114.0-122.0:+2
   --prefix ./jobs/run0001/ --catalog run0001.txt water.com
 
 $ cat run0001.txt
-[1:./jobs/run0001/1/water.com] {"HOH":114.0,"OH":0.8}
-[2:./jobs/run0001/2/water.com] {"HOH":116.0,"OH":0.8}
-[3:./jobs/run0001/3/water.com] {"HOH":118.0,"OH":0.8}
-[4:./jobs/run0001/4/water.com] {"HOH":120.0,"OH":0.8}
-[5:./jobs/run0001/5/water.com] {"HOH":122.0,"OH":0.8}
-[6:./jobs/run0001/6/water.com] {"HOH":114.0,"OH":0.9}
-[7:./jobs/run0001/7/water.com] {"HOH":116.0,"OH":0.9}
-[8:./jobs/run0001/8/water.com] {"HOH":118.0,"OH":0.9}
-[9:./jobs/run0001/9/water.com] {"HOH":120.0,"OH":0.9}
-[10:./jobs/run0001/10/water.com] {"HOH":122.0,"OH":0.9}
-[11:./jobs/run0001/11/water.com] {"HOH":114.0,"OH":1.0}
-[12:./jobs/run0001/12/water.com] {"HOH":116.0,"OH":1.0}
-[13:./jobs/run0001/13/water.com] {"HOH":118.0,"OH":1.0}
-[14:./jobs/run0001/14/water.com] {"HOH":120.0,"OH":1.0}
-[15:./jobs/run0001/15/water.com] {"HOH":122.0,"OH":1.0}
+[1:./jobs/run0001/1] { "parameters": {"HOH":114.0,"OH":0.8}, "files": ["./jobs/run0001/1/water.com"] }
+[2:./jobs/run0001/2] { "parameters": {"HOH":116.0,"OH":0.8}, "files": ["./jobs/run0001/2/water.com"] }
+[3:./jobs/run0001/3] { "parameters": {"HOH":118.0,"OH":0.8}, "files": ["./jobs/run0001/3/water.com"] }
+[4:./jobs/run0001/4] { "parameters": {"HOH":120.0,"OH":0.8}, "files": ["./jobs/run0001/4/water.com"] }
+[5:./jobs/run0001/5] { "parameters": {"HOH":122.0,"OH":0.8}, "files": ["./jobs/run0001/5/water.com"] }
+[6:./jobs/run0001/6] { "parameters": {"HOH":114.0,"OH":0.9}, "files": ["./jobs/run0001/6/water.com"] }
+[7:./jobs/run0001/7] { "parameters": {"HOH":116.0,"OH":0.9}, "files": ["./jobs/run0001/7/water.com"] }
+[8:./jobs/run0001/8] { "parameters": {"HOH":118.0,"OH":0.9}, "files": ["./jobs/run0001/8/water.com"] }
+[9:./jobs/run0001/9] { "parameters": {"HOH":120.0,"OH":0.9}, "files": ["./jobs/run0001/9/water.com"] }
+[10:./jobs/run0001/10] { "parameters": {"HOH":122.0,"OH":0.9}, "files": ["./jobs/run0001/10/water.com"] }
+[11:./jobs/run0001/11] { "parameters": {"HOH":114.0,"OH":1.0}, "files": ["./jobs/run0001/11/water.com"] }
+[12:./jobs/run0001/12] { "parameters": {"HOH":116.0,"OH":1.0}, "files": ["./jobs/run0001/12/water.com"] }
+[13:./jobs/run0001/13] { "parameters": {"HOH":118.0,"OH":1.0}, "files": ["./jobs/run0001/13/water.com"] }
+[14:./jobs/run0001/14] { "parameters": {"HOH":120.0,"OH":1.0}, "files": ["./jobs/run0001/14/water.com"] }
+[15:./jobs/run0001/15] { "parameters": {"HOH":122.0,"OH":1.0}, "files": ["./jobs/run0001/15/water.com"] }
 ```
 
 Note that the `run0001` directory was removed before regenerating the job array:  if any target directories exist the program will not overwrite them and will return an error.
@@ -133,7 +133,7 @@ usage: job-templating-tool [-h] [--version] [--verbose] [--quiet]
                            [--prefix <prefix>]
                            [--index-format-in-paths <python-conversion>]
                            [--ignore-templating-errors]
-                           [--no-match-permissions]
+                           [--no-copy-permissions]
                            [--yaml-parameters <yaml-file>]
                            [--json-parameters <json-file>]
                            [--csv-parameters <csv-file>]
@@ -183,7 +183,7 @@ optional arguments:
   --ignore-templating-errors
                         do not exit on templating errors, continue trying to
                         generate the rest of the templated content
-  --no-match-permissions
+  --no-copy-permissions
                         do NOT copy file permissions from the original
                         template files to the generated files
 
@@ -301,21 +301,21 @@ $ job-templating-tool --parameter OH=0.8-1.0:+0.1 --parameter HOH=114.0-122.0:+2
   --prefix ./jobs/ --catalog jobs.idx --jobs-per-directory=8 water.com
 
 $ cat jobs.idx
-[1:./jobs/0/1/water.com] {"HOH":114.0,"OH":0.8}
-[2:./jobs/0/2/water.com] {"HOH":116.0,"OH":0.8}
-[3:./jobs/0/3/water.com] {"HOH":118.0,"OH":0.8}
-[4:./jobs/0/4/water.com] {"HOH":120.0,"OH":0.8}
-[5:./jobs/0/5/water.com] {"HOH":122.0,"OH":0.8}
-[6:./jobs/0/6/water.com] {"HOH":114.0,"OH":0.9}
-[7:./jobs/0/7/water.com] {"HOH":116.0,"OH":0.9}
-[8:./jobs/0/8/water.com] {"HOH":118.0,"OH":0.9}
-[9:./jobs/1/9/water.com] {"HOH":120.0,"OH":0.9}
-[10:./jobs/1/10/water.com] {"HOH":122.0,"OH":0.9}
-[11:./jobs/1/11/water.com] {"HOH":114.0,"OH":1.0}
-[12:./jobs/1/12/water.com] {"HOH":116.0,"OH":1.0}
-[13:./jobs/1/13/water.com] {"HOH":118.0,"OH":1.0}
-[14:./jobs/1/14/water.com] {"HOH":120.0,"OH":1.0}
-[15:./jobs/1/15/water.com] {"HOH":122.0,"OH":1.0}
+[1:./jobs/0/1] { "parameters": {"HOH":114.0,"OH":0.8}, "files": ["./jobs/0/1/water.com"] }
+[2:./jobs/0/2] { "parameters": {"HOH":116.0,"OH":0.8}, "files": ["./jobs/0/2/water.com"] }
+[3:./jobs/0/3] { "parameters": {"HOH":118.0,"OH":0.8}, "files": ["./jobs/0/3/water.com"] }
+[4:./jobs/0/4] { "parameters": {"HOH":120.0,"OH":0.8}, "files": ["./jobs/0/4/water.com"] }
+[5:./jobs/0/5] { "parameters": {"HOH":122.0,"OH":0.8}, "files": ["./jobs/0/5/water.com"] }
+[6:./jobs/0/6] { "parameters": {"HOH":114.0,"OH":0.9}, "files": ["./jobs/0/6/water.com"] }
+[7:./jobs/0/7] { "parameters": {"HOH":116.0,"OH":0.9}, "files": ["./jobs/0/7/water.com"] }
+[8:./jobs/0/8] { "parameters": {"HOH":118.0,"OH":0.9}, "files": ["./jobs/0/8/water.com"] }
+[9:./jobs/1/9] { "parameters": {"HOH":120.0,"OH":0.9}, "files": ["./jobs/1/9/water.com"] }
+[10:./jobs/1/10] { "parameters": {"HOH":122.0,"OH":0.9}, "files": ["./jobs/1/10/water.com"] }
+[11:./jobs/1/11] { "parameters": {"HOH":114.0,"OH":1.0}, "files": ["./jobs/1/11/water.com"] }
+[12:./jobs/1/12] { "parameters": {"HOH":116.0,"OH":1.0}, "files": ["./jobs/1/12/water.com"] }
+[13:./jobs/1/13] { "parameters": {"HOH":118.0,"OH":1.0}, "files": ["./jobs/1/13/water.com"] }
+[14:./jobs/1/14] { "parameters": {"HOH":120.0,"OH":1.0}, "files": ["./jobs/1/14/water.com"] }
+[15:./jobs/1/15] { "parameters": {"HOH":122.0,"OH":1.0}, "files": ["./jobs/1/15/water.com"] }
 ```
 
 Note that there are 8 jobs under the `./jobs/0/` directory and the remaining 7 jobs are under `./jobs/1/`.  Dropping to 3 jobs per directory:
@@ -326,21 +326,21 @@ $ job-templating-tool --parameter OH=0.8-1.0:+0.1 --parameter HOH=114.0-122.0:+2
   --prefix ./jobs/ --catalog jobs.idx --jobs-per-directory=3 water.com
 
 $ cat jobs.idx
-[1:./jobs/0/0/1/water.com] {"HOH":114.0,"OH":0.8}
-[2:./jobs/0/0/2/water.com] {"HOH":116.0,"OH":0.8}
-[3:./jobs/0/0/3/water.com] {"HOH":118.0,"OH":0.8}
-[4:./jobs/0/1/4/water.com] {"HOH":120.0,"OH":0.8}
-[5:./jobs/0/1/5/water.com] {"HOH":122.0,"OH":0.8}
-[6:./jobs/0/1/6/water.com] {"HOH":114.0,"OH":0.9}
-[7:./jobs/0/2/7/water.com] {"HOH":116.0,"OH":0.9}
-[8:./jobs/0/2/8/water.com] {"HOH":118.0,"OH":0.9}
-[9:./jobs/0/2/9/water.com] {"HOH":120.0,"OH":0.9}
-[10:./jobs/1/3/10/water.com] {"HOH":122.0,"OH":0.9}
-[11:./jobs/1/3/11/water.com] {"HOH":114.0,"OH":1.0}
-[12:./jobs/1/3/12/water.com] {"HOH":116.0,"OH":1.0}
-[13:./jobs/1/4/13/water.com] {"HOH":118.0,"OH":1.0}
-[14:./jobs/1/4/14/water.com] {"HOH":120.0,"OH":1.0}
-[15:./jobs/1/4/15/water.com] {"HOH":122.0,"OH":1.0}
+[1:./jobs/0/0/1] { "parameters": {"HOH":114.0,"OH":0.8}, "files": ["./jobs/0/0/1/water.com"] }
+[2:./jobs/0/0/2] { "parameters": {"HOH":116.0,"OH":0.8}, "files": ["./jobs/0/0/2/water.com"] }
+[3:./jobs/0/0/3] { "parameters": {"HOH":118.0,"OH":0.8}, "files": ["./jobs/0/0/3/water.com"] }
+[4:./jobs/0/1/4] { "parameters": {"HOH":120.0,"OH":0.8}, "files": ["./jobs/0/1/4/water.com"] }
+[5:./jobs/0/1/5] { "parameters": {"HOH":122.0,"OH":0.8}, "files": ["./jobs/0/1/5/water.com"] }
+[6:./jobs/0/1/6] { "parameters": {"HOH":114.0,"OH":0.9}, "files": ["./jobs/0/1/6/water.com"] }
+[7:./jobs/0/2/7] { "parameters": {"HOH":116.0,"OH":0.9}, "files": ["./jobs/0/2/7/water.com"] }
+[8:./jobs/0/2/8] { "parameters": {"HOH":118.0,"OH":0.9}, "files": ["./jobs/0/2/8/water.com"] }
+[9:./jobs/0/2/9] { "parameters": {"HOH":120.0,"OH":0.9}, "files": ["./jobs/0/2/9/water.com"] }
+[10:./jobs/1/3/10] { "parameters": {"HOH":122.0,"OH":0.9}, "files": ["./jobs/1/3/10/water.com"] }
+[11:./jobs/1/3/11] { "parameters": {"HOH":114.0,"OH":1.0}, "files": ["./jobs/1/3/11/water.com"] }
+[12:./jobs/1/3/12] { "parameters": {"HOH":116.0,"OH":1.0}, "files": ["./jobs/1/3/12/water.com"] }
+[13:./jobs/1/4/13] { "parameters": {"HOH":118.0,"OH":1.0}, "files": ["./jobs/1/4/13/water.com"] }
+[14:./jobs/1/4/14] { "parameters": {"HOH":120.0,"OH":1.0}, "files": ["./jobs/1/4/14/water.com"] }
+[15:./jobs/1/4/15] { "parameters": {"HOH":122.0,"OH":1.0}, "files": ["./jobs/1/4/15/water.com"] }
 ```
 
 The hierarchy is one level deeper now to ensure that each directory contains at most 3 child directories.
@@ -361,21 +361,21 @@ $ job-templating-tool --parameter OH=0.8-1.0:+0.1 --parameter HOH=114.0-122.0:+2
   --array-index=510 --jobs-per-directory=50 water.com
 
 $ cat jobs.idx
-[510:./jobs/8/510/water.com] {"HOH":114.0,"OH":0.8}
-[511:./jobs/8/511/water.com] {"HOH":116.0,"OH":0.8}
-[512:./jobs/8/512/water.com] {"HOH":118.0,"OH":0.8}
-[513:./jobs/8/513/water.com] {"HOH":120.0,"OH":0.8}
-[514:./jobs/8/514/water.com] {"HOH":122.0,"OH":0.8}
-[515:./jobs/8/515/water.com] {"HOH":114.0,"OH":0.9}
-[516:./jobs/8/516/water.com] {"HOH":116.0,"OH":0.9}
-[517:./jobs/8/517/water.com] {"HOH":118.0,"OH":0.9}
-[518:./jobs/8/518/water.com] {"HOH":120.0,"OH":0.9}
-[519:./jobs/8/519/water.com] {"HOH":122.0,"OH":0.9}
-[520:./jobs/8/520/water.com] {"HOH":114.0,"OH":1.0}
-[521:./jobs/8/521/water.com] {"HOH":116.0,"OH":1.0}
-[522:./jobs/8/522/water.com] {"HOH":118.0,"OH":1.0}
-[523:./jobs/8/523/water.com] {"HOH":120.0,"OH":1.0}
-[524:./jobs/8/524/water.com] {"HOH":122.0,"OH":1.0}
+[510:./jobs/8/510] { "parameters": {"HOH":114.0,"OH":0.8}, "files": ["./jobs/8/510/water.com"] }
+[511:./jobs/8/511] { "parameters": {"HOH":116.0,"OH":0.8}, "files": ["./jobs/8/511/water.com"] }
+[512:./jobs/8/512] { "parameters": {"HOH":118.0,"OH":0.8}, "files": ["./jobs/8/512/water.com"] }
+[513:./jobs/8/513] { "parameters": {"HOH":120.0,"OH":0.8}, "files": ["./jobs/8/513/water.com"] }
+[514:./jobs/8/514] { "parameters": {"HOH":122.0,"OH":0.8}, "files": ["./jobs/8/514/water.com"] }
+[515:./jobs/8/515] { "parameters": {"HOH":114.0,"OH":0.9}, "files": ["./jobs/8/515/water.com"] }
+[516:./jobs/8/516] { "parameters": {"HOH":116.0,"OH":0.9}, "files": ["./jobs/8/516/water.com"] }
+[517:./jobs/8/517] { "parameters": {"HOH":118.0,"OH":0.9}, "files": ["./jobs/8/517/water.com"] }
+[518:./jobs/8/518] { "parameters": {"HOH":120.0,"OH":0.9}, "files": ["./jobs/8/518/water.com"] }
+[519:./jobs/8/519] { "parameters": {"HOH":122.0,"OH":0.9}, "files": ["./jobs/8/519/water.com"] }
+[520:./jobs/8/520] { "parameters": {"HOH":114.0,"OH":1.0}, "files": ["./jobs/8/520/water.com"] }
+[521:./jobs/8/521] { "parameters": {"HOH":116.0,"OH":1.0}, "files": ["./jobs/8/521/water.com"] }
+[522:./jobs/8/522] { "parameters": {"HOH":118.0,"OH":1.0}, "files": ["./jobs/8/522/water.com"] }
+[523:./jobs/8/523] { "parameters": {"HOH":120.0,"OH":1.0}, "files": ["./jobs/8/523/water.com"] }
+[524:./jobs/8/524] { "parameters": {"HOH":122.0,"OH":1.0}, "files": ["./jobs/8/524/water.com"] }
 ```
 
 Now assume a different parameterization which holds the O–H bond length constant at 1.45 and scans the H–O–H angle, and is inserted into the overall array at index 680:
@@ -386,26 +386,11 @@ $ job-templating-tool --parameter OH=1.45 --parameter HOH=114.0-122.0:+2.0 \
   --array-base-index=100 --array-index=680 --jobs-per-directory=50 water.com
 
 $ cat jobs.idx
-[510:./jobs/8/510/water.com] {"HOH":114.0,"OH":0.8}
-[511:./jobs/8/511/water.com] {"HOH":116.0,"OH":0.8}
-[512:./jobs/8/512/water.com] {"HOH":118.0,"OH":0.8}
-[513:./jobs/8/513/water.com] {"HOH":120.0,"OH":0.8}
-[514:./jobs/8/514/water.com] {"HOH":122.0,"OH":0.8}
-[515:./jobs/8/515/water.com] {"HOH":114.0,"OH":0.9}
-[516:./jobs/8/516/water.com] {"HOH":116.0,"OH":0.9}
-[517:./jobs/8/517/water.com] {"HOH":118.0,"OH":0.9}
-[518:./jobs/8/518/water.com] {"HOH":120.0,"OH":0.9}
-[519:./jobs/8/519/water.com] {"HOH":122.0,"OH":0.9}
-[520:./jobs/8/520/water.com] {"HOH":114.0,"OH":1.0}
-[521:./jobs/8/521/water.com] {"HOH":116.0,"OH":1.0}
-[522:./jobs/8/522/water.com] {"HOH":118.0,"OH":1.0}
-[523:./jobs/8/523/water.com] {"HOH":120.0,"OH":1.0}
-[524:./jobs/8/524/water.com] {"HOH":122.0,"OH":1.0}
-[680:./jobs/11/680/water.com] {"HOH":114.0,"OH":1.45}
-[681:./jobs/11/681/water.com] {"HOH":116.0,"OH":1.45}
-[682:./jobs/11/682/water.com] {"HOH":118.0,"OH":1.45}
-[683:./jobs/11/683/water.com] {"HOH":120.0,"OH":1.45}
-[684:./jobs/11/684/water.com] {"HOH":122.0,"OH":1.45}
+[680:./jobs/11/680] { "parameters": {"HOH":114.0,"OH":1.45}, "files": ["./jobs/11/680/water.com"] }
+[681:./jobs/11/681] { "parameters": {"HOH":116.0,"OH":1.45}, "files": ["./jobs/11/681/water.com"] }
+[682:./jobs/11/682] { "parameters": {"HOH":118.0,"OH":1.45}, "files": ["./jobs/11/682/water.com"] }
+[683:./jobs/11/683] { "parameters": {"HOH":120.0,"OH":1.45}, "files": ["./jobs/11/683/water.com"] }
+[684:./jobs/11/684] { "parameters": {"HOH":122.0,"OH":1.45}, "files": ["./jobs/11/684/water.com"] }
 ```
 
 #### Copying and symlinking files into job directories
