@@ -866,9 +866,9 @@ if cli_args.use_flat_layout:
         template path 'input.xml' with job array index 24 becomes 'input_24.xml'.
         """
 
-        index_to_string_format = '{0' + cli_args.index_format_in_paths + '}'
+        index_to_string_format = '_{0' + cli_args.index_format_in_paths + '}' if cli_args.index_format_in_paths else ''
         path_prefix = cli_args.prefix
-        path_prefix_is_dir = cli.args.prefix.endswith(os.sep)
+        path_prefix_is_dir = cli_args.prefix.endswith(os.sep)
         path_prefix_is_dir_created = False
 
         @staticmethod
@@ -883,20 +883,20 @@ if cli_args.use_flat_layout:
                     os.mkdir(path, mode)
         @classmethod
         def directoryPrefixForJobArrayIndex(cls, job_array_index):
-            return ''
+            return cls.path_prefix if cls.path_prefix_is_dir else os.path.dirname(cls.path_prefix)
 
         @classmethod
         def templatePathToOutputPath(cls, template_path, job_array_index):
-            if cls.path_prefix_is_dir and not path_prefix_is_dir_created:
+            if cls.path_prefix_is_dir and not cls.path_prefix_is_dir_created:
                 if not os.path.exists(cls.path_prefix):
-                    TemplatePathHelper.mkdir_p(job_subdirectory)
-                path_prefix_is_dir_created = True
+                    TemplatePathHelper.mkdir_p(cls.path_prefix)
+                cls.path_prefix_is_dir_created = True
 
             if template_path == '-':
                 return 'stdin_' + cls.index_to_string_format.format(job_array_index)
-            path_components = os.path.split(template_path)
-            filename_components = os.path.splitext(template_path)
-            return filename_components[0] + '_' + cls.index_to_string_format.format(job_array_index) + filename_components[1]
+            path_components = os.path.basename(template_path)
+            filename_components = os.path.splitext(path_components)
+            return cls.path_prefix + filename_components[0] + cls.index_to_string_format.format(job_array_index) + filename_components[1]
 
 else:
     class TemplatePathHelper(object):
@@ -910,7 +910,7 @@ else:
         time by the user.
         """
 
-        index_to_string_format = '{0' + cli_args.index_format_in_paths + '}'
+        index_to_string_format = '{0' + cli_args.index_format_in_paths + '}' if cli_args.index_format_in_paths else '{0:d}'
         jobs_per_directory = cli_args.jobs_per_directory
         dir_hierarchy_depth = None
         array_base_index = cli_args.array_base_index
