@@ -424,3 +424,61 @@ lrwxrwxrwx 1 frey sysadmin 18 May 10 14:41 fields.db -> ../../../fields.db
 -rw-r--r-- 1 frey sysadmin 50 May 10 13:52 water.chk
 -rw-r--r-- 1 frey sysadmin 69 May 10 14:41 water.com
 ```
+
+## Working with indexing catalog files
+
+The indexing catalog files (produced using the `--catalog` flag) include a mapping of the array index and base path of each instance of a template to the associated parameter values.  The `job-catalog-lookup` tool can be used to extract data from a catalog file.
+
+```
+usage: job-catalog-lookup [-h] [-i <array-index>] [-b <directory-path>]
+                          [-p <key>=<value>]
+                          [-f _index_|_path_|<parameter-key>]
+                          [-F table|tsv|csv|json] [-n] [-d <int>]
+                          <catalog-file-path>
+
+Extract information from job-templating catalogs
+
+positional arguments:
+  <catalog-file-path>   Read from this catalog file.
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -i <array-index>, --index <array-index>
+                        Select job with the given index; can be used multiple
+                        times.
+  -b <directory-path>, --base-path <directory-path>
+                        Select job with the given base directory path; can be
+                        used multiple times.
+  -p <key>=<value>, --parameter <key>=<value>
+                        Select job with the given parameter, where <key> is
+                        the name and <value> is the value of that parameter;
+                        can be used multiple times.
+  -f _index_|_path_|<parameter-key>, --field _index_|_path_|<parameter-key>
+                        Output this field for selected job(s); can be used
+                        multiple times. The job array index is indicated by
+                        _index_; the base path by _path_; and parameter values
+                        by name <parameter-key> name. If no fields are
+                        explicitly provided, all fields are displayed.
+  -F table|tsv|csv|json, --format table|tsv|csv|json
+                        Output format for the selected jobs. Default is table.
+  -n, --no-header       Omit a header from any output format that supports it.
+  -d <int>, --digits <int>
+                        Number of digits to display after decimal point; -1
+                        implies no digit limits should be expressed.
+```
+
+For the first example shown above, where indices 1 through 15 were produced for a water molecule template, the catalog file `run0001.txt` could be searched for the index corresponding to particular parameter values:
+
+```
+$ job-catalog-lookup --parameter HOH=122.0 --parameter OH=0.8 -f _index_ -n
+5
+```
+
+Likewise, the OH bond length for index 10 could be found:
+
+```
+$ job-catalog-lookup --index 10 -f OH -n
+0.90000000
+```
+
+The output defaults to a tabular text format but TSV, CSV, and JSON can also be selected.

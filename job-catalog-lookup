@@ -1,0 +1,426 @@
+#!/usr/bin/env python
+#
+# Select job information from a templating catalog file.
+#
+
+import os, sys
+import re
+import json
+import argparse
+
+
+class OutputFilter(object):
+    """Abstract base class for the output filters for retrieved job data.  Concrete subclassses must override the print_*() methods."""
+
+    def __init__(self):
+        pass
+    
+    def preprocess_output_data(self, output_data, field_types, header_row, float_digits=-1, should_show_header=True):
+        pass
+    
+    def print_header(self, header_row=None):
+        raise NotImplementedError('OutputFilter is an abstract base class')
+        
+    def print_row(self, output_row):
+        raise NotImplementedError('OutputFilter is an abstract base class')
+    
+    def print_footer(self):
+        raise NotImplementedError('OutputFilter is an abstract base class')
+
+
+class TableOutputFilter(OutputFilter):
+    """An instance of TableOutputFilter is a concrete implementation of OutputFilter that generates a textual table of values.  Each column is sized to match the maximum width across all values (possibly including headers) in that column.  Int and float fields are right-aligned, str fields are left-aligned.  The precision of float fields is determined by the call to preprocess_output_data()."""
+
+    _output_type_fmt = { int: '{:d}', float: '{:f}', str: '{:s}' }
+    _output_type_map = { int: '{{:>{:d}d}}', float: '{{:>{:d}f}}', str: '{{:<{:d}s}}' }
+    _header_align_map = { int: '>', float: '>', str: '<' }
+    
+    def preprocess_output_data(self, output_data, field_types, header_row, float_digits=-1, should_show_header=True):
+        if should_show_header:
+            self._field_widths = [len(s) for s in header_row]
+        else:
+            self._field_widths = None
+        by_type_fmt = dict(TableOutputFilter._output_type_fmt)
+        if float_digits >= 0:
+            by_type_fmt[float] = '{{:.{:d}f}}'.format(float_digits)
+        for output_row in output_data:
+            field_widths = [len(by_type_fmt[t].format(s)) for s,t in zip(output_row, field_types)]
+            if self._field_widths:
+                self._field_widths = [max(a,b) for a, b in zip(field_widths, self._field_widths)]
+            else:
+                self._field_widths = field_widths
+        self._header_format = ''
+        self._output_format = ''
+        by_type_fmt = dict(TableOutputFilter._output_type_map)
+        if float_digits >= 0:
+            by_type_fmt[float] = '{{{{:>{{:d}}.{:d}f}}}}'.format(float_digits)
+        for field_width, field_type in zip(self._field_widths, field_types):
+            self._header_format = self._header_format + '{:s}{{:{:s}{:d}s}}'.format((' ' if self._header_format else ''), TableOutputFilter._header_align_map[field_type], field_width)
+            self._output_format = self._output_format + ('{:s}' + by_type_fmt[field_type]).format((' ' if self._output_format else ''), field_width)
+        
+    def print_header(self, header_row=None):
+        if header_row:
+            print(self._header_format.format(*header_row))
+            print(self._header_format.format(*['-'*l for l in self._field_widths]))
+            
+    def print_row(self, output_row):
+        if output_row:
+            print(self._output_format.format(*output_row))
+            
+    def print_footer(self):
+        pass
+
+
+class TSVOutputFilter(OutputFilter):
+    """An instance of TSVOutputFilter is a concrete implementation of OutputFilter that generates a tab-separated table of values.  The precision of float fields is determined by the call to preprocess_output_data()."""
+
+    _output_type_fmt = { int: '{{:d}}', float: '{{:f}}', str: '{{:s}}' }
+    _delimiter = '\t'
+    
+    def preprocess_output_data(self, output_data, field_types, header_row, float_digits=-1, should_show_header=True):
+        if should_show_header:
+            self._header_format = self.__class__._delimiter.join(['"{:s}"'.format(h) for h in header_row])
+        else:
+            self._header_format = None
+        self._output_format = ''
+        by_type_fmt = dict(TSVOutputFilter._output_type_fmt)
+        if float_digits >= 0:
+            by_type_fmt[float] = '{{{{:>.{:d}f}}}}'.format(float_digits)
+        for field_type in field_types:
+            if field_type is str:
+                self._output_format = self._output_format + ('{:s}"' + by_type_fmt[field_type] + '"').format((self.__class__._delimiter if self._output_format else ''))
+            else:
+                self._output_format = self._output_format + ('{:s}' + by_type_fmt[field_type]).format((self.__class__._delimiter if self._output_format else ''))
+                
+    def print_header(self, header_row=None):
+        if header_row:
+            print(self._header_format.format(*header_row))
+            
+    def print_row(self, output_row):
+        print(self._output_format.format(*output_row))
+    
+    def print_footer(self):
+        pass
+
+
+class CSVOutputFilter(TSVOutputFilter):
+    """An instance of CSVOutputFilter is a subclass of CSVOutputFilter that overrides the delimiter character -- a comma instead of a tab."""
+
+    _delimiter = ','
+            
+            
+class JSONOutputFilter(OutputFilter):
+    """An instance of JSONOutputFilter is a concrete implementation of OutputFilter that generates a JSON document containing the data.  The document is an array of dictionaries, with each row producing a dictionary keyed by the header names.  The precision of float fields is determined by the call to preprocess_output_data()."""
+
+    _output_type_fmt = { int: '{:d}', float: '{:f}', str: '"{:s}"' }
+
+    def preprocess_output_data(self, output_data, field_types, header_row, float_digits=-1, should_show_header=True):
+        by_type_fmt = dict(JSONOutputFilter._output_type_fmt)
+        if float_digits >= 0:
+            by_type_fmt[float] = '{{:.{:d}f}}'.format(float_digits)
+            
+        self._output_format = '{{'
+        delim = ''
+        for field_name, field_type in zip(header_row, field_types):
+            self._output_format = self._output_format + delim + '"' + field_name + '":' + by_type_fmt[field_type]
+            delim = ','
+        self._output_format = self._output_format + '}}'
+    
+    def print_header(self, header_row=None):
+        sys.stdout.write('[')
+        self._delim = ''
+        
+    def print_row(self, output_row):
+        sys.stdout.write(self._delim)
+        sys.stdout.write(self._output_format.format(*output_row))
+        self._delim = ','
+        
+    def print_footer(self, header_row=None):
+        sys.stdout.write(']\n')
+
+
+#
+# Map the selectable name of an output format to the class that implements
+# it:
+#
+outputFilterMap = {
+    'table': TableOutputFilter,
+    'tsv': TSVOutputFilter,
+    'csv': CSVOutputFilter,
+    'json': JSONOutputFilter
+}
+
+
+class JobIndex(object):
+    """An instance of JobIndex wraps the information associated with a single job index in the catalog.  This includes the integral index, the base path containing the job files, and the dict of parameter values associated with the index.
+
+The parameter values can be scanned to determine their fundamental Python types:  int, float, or str.  These types are used by the JobCatalog class to determine what comparison operator to use when filtering jobs."""
+
+    def __init__(self, jindex, base_path, json_data):
+        """Set the job index and base path.  Parse the incoming json_data; if it is not a dict, raise a ValueError exception."""
+        self.jindex = int(jindex)
+        self.base_path = str(base_path)
+        self.job_data = json.loads(str(json_data))
+        if not isinstance(self.job_data, dict):
+            raise ValueError('Job index {:d}:  invalid JSON data from catalog file'.format(self.jindex))
+    
+    def __str__(self):
+        return '{:d}: <{:s}> {{ {:s} }}'.format(self.jindex, self.base_path, self.job_data)
+    
+    def __repr__(self):
+        return '{:s}({:d},"{:s}",{:s})'.format(self.__class__.__name__, self.jindex, self.base_path, repr(self.job_data))
+        
+    
+    def files(self):
+        """Returns the list of generated files associated with the receiver."""
+        if 'files' in self.job_data:
+            return self.job_data['files']
+        return []
+    
+    def parameters(self):
+        """Returns the dict containing all parameters for the receiver."""
+        if 'parameters' in self.job_data:
+            return self.job_data['parameters']
+        return {}
+    
+    def parameter_keys(self):
+        """Returns the receiver's parameter keys."""
+        if 'parameters' in self.job_data:
+            return self.job_data['parameters'].keys()
+        return []
+    
+    def parameter_types(self):
+        """Returns a dict mapping the receiver's property keys to the Python type of their values."""
+        out_types = {}
+        if 'parameters' in self.job_data:
+            for parameter_key, parameter_value in self.job_data['parameters'].items():
+                if isinstance(parameter_value, int):
+                    out_types[parameter_key] = int
+                elif isinstance(parameter_value, float):
+                    out_types[parameter_key] = float
+                else:
+                    out_types[parameter_key] = str
+        return out_types
+    
+    def parameter(self, parameter_key, **kwargs):
+        """Attempt to fetch the value of the given parameter_key.  An optional default_value argument can be provided, in which case an undefined parameter yields that value rather than a KeyError exception."""
+        if 'parameters' in self.job_data:
+            if 'default_value' in kwargs:
+                return self.job_data['parameters'].get(parameter_key, kwargs['default_value'])
+            return self.job_data['parameters'][parameter_key]
+        if 'default_value' in kwargs:
+            return kwargs['default_value']
+        raise KeyError('No such parameter: ' + str(parameter_key))
+
+        
+
+class JobCatalog(object):
+    """An instance of JobCatalog is initialized from a job-templating catalog file to wrap each individual job index record contained in the file.  The list of jobs can then be filtered by index, path, or individual parameter values."""
+    
+    # Regex that matches a line from the catalog file:
+    __catalog_regex = re.compile(r'^\s*\[(?P<index>\d+):(?P<path>[^\]]*)\]\s*(?P<json>{.*})\s*$')
+
+    def __init__(self, fptr):
+        """Given an open file stream, read each line from the file and parse to produce a list of job index records (jobs).  As the records are parsed, the Python types for all parameters are checked and a mapping (parameter_types) is compiled that determines whether int-, float-, or str-based comparisons will be used for each.  A set of all unique observed parameter_keys is compiled, as well."""
+        self.jobs = []
+        self.parameter_keys = set()
+        self.parameter_types = {}
+        for catalog_line in fptr:
+            m = JobCatalog.__catalog_regex.match(catalog_line)
+            if m is not None:
+                j = JobIndex(m.group('index'), m.group('path'), m.group('json'))
+                self.jobs.append(j)
+                
+                # Update the parameter types:
+                for k,t in j.parameter_types().items():
+                    if k not in self.parameter_types:
+                        self.parameter_types[k] = t
+                    elif t is str:
+                        self.parameter_types[k] = str
+                    elif t is float and self.parameter_types[k] is int:
+                        self.parameter_types[k] = float
+                
+                # Generate parameter keys:
+                self.parameter_keys.update(j.parameter_keys())
+
+
+    def filtered_jobs(self, **kwargs):
+        """Apply key=value criteria to the receiver's jobs list to select only those jobs which satisfy the given conditions.  Acceptable key=value arguments are:
+
+- 'index'=jindex: select the job with the given array index (jindex as an int)
+- 'path'=path_str: select the job with the given base path (path_str as a str)
+- 'parameter_dict'=d: iterate over key-value pairs in d, with each key being a parameter name and value being the value to test, selecting jobs with the given parameter value
+- k=v: in all other cases, select jobs for which parameter k has the value v
+
+A list of job(s) matching the conditions is returned, or an empty list if no jobs were selected.  If there are no limiting criteria, the list of all jobs is returned."""
+        filtered_list = list(self.jobs)
+        for parameter_key, parameter_value in kwargs.items():
+            if parameter_key == 'index':
+                if isinstance(parameter_value, list):
+                    forced_int_list = [int(i) for i in parameter_value]
+                    filtered_list = filter(lambda j: j.jindex in forced_int_list, filtered_list)
+                else:
+                    filtered_list = filter(lambda j: j.jindex == int(parameter_value), filtered_list)
+            elif parameter_key == 'path':
+                if isinstance(parameter_value, list):
+                    forced_str_list = [str(i) for i in parameter_value]
+                    filtered_list = filter(lambda j: len(filter(lambda jj: os.path.samefile(j.base_path, jj), forced_str_list)) > 0, filtered_list)
+                else:
+                    filtered_list = filter(lambda j: os.path.samefile(j.base_path, str(parameter_value)), filtered_list)
+            elif parameter_key == 'parameter_dict':
+                for dict_key, dict_value in parameter_value.items():
+                    if self.parameter_types[dict_key] == int:
+                        if isinstance(dict_value, list):
+                            forced_int_list = [int(i) for i in dict_value]
+                            filtered_list = filter(lambda j: int(j.parameter(dict_key)) in forced_int_list, filtered_list)
+                        else:
+                            filtered_list = filter(lambda j: int(j.parameter(dict_key)) == int(dict_value), filtered_list)
+                    elif self.parameter_types[dict_key] == float:
+                        if isinstance(dict_value, list):
+                            forced_float_list = [float(i) for i in dict_value]
+                            filtered_list = filter(lambda j: float(j.parameter(dict_key)) in forced_float_list, filtered_list)
+                        else:
+                            filtered_list = filter(lambda j: float(j.parameter(dict_key)) == float(dict_value), filtered_list)
+                    else:
+                        if isinstance(dict_value, list):
+                            forced_str_list = [str(i) for i in dict_value]
+                            filtered_list = filter(lambda j: str(j.parameter(dict_key)) in forced_str_list, filtered_list)
+                        else:
+                            filtered_list = filter(lambda j: str(j.parameter(dict_key)) == str(dict_value), filtered_list)
+            else:
+                if self.parameter_types[parameter_key] == int:
+                    if isinstance(parameter_value, list):
+                        forced_int_list = [int(i) for i in parameter_value]
+                        filtered_list = filter(lambda j: int(j.parameter(parameter_key)) in forced_int_list, filtered_list)
+                    else:
+                        filtered_list = filter(lambda j: int(j.parameter(parameter_key)) == int(parameter_value), filtered_list)
+                elif self.parameter_types[parameter_key] == float:
+                    if isinstance(parameter_value, list):
+                        forced_float_list = [float(i) for i in parameter_value]
+                        filtered_list = filter(lambda j: float(j.parameter(parameter_key)) in forced_float_list, filtered_list)
+                    else:
+                        filtered_list = filter(lambda j: float(j.parameter(parameter_key)) == float(parameter_value), filtered_list)
+                else:
+                    if isinstance(parameter_value, list):
+                        forced_str_list = [str(i) for i in parameter_value]
+                        filtered_list = filter(lambda j: str(j.parameter(parameter_key)) in forced_str_list, filtered_list)
+                    else:
+                        filtered_list = filter(lambda j: str(j.parameter(parameter_key)) == str(parameter_value), filtered_list)
+        return filtered_list
+
+
+
+
+cli_parser = argparse.ArgumentParser(description='Extract information from job-templating catalogs')
+cli_parser.add_argument('catalog_file', metavar='<catalog-file-path>',
+        nargs=1,
+        help='Read from this catalog file.')
+cli_parser.add_argument('-i', '--index', metavar='<array-index>',
+        dest='filter_by_index',
+        action='append',
+        type=int,
+        help='Select job with the given index; can be used multiple times.')
+cli_parser.add_argument('-b', '--base-path', metavar='<directory-path>',
+        dest='filter_by_base_path',
+        action='append',
+        type=str,
+        help='Select job with the given base directory path; can be used multiple times.')
+cli_parser.add_argument('-p', '--parameter', metavar='<key>=<value>',
+        dest='filter_by_parameter',
+        action='append',
+        type=str,
+        help='Select job with the given parameter, where <key> is the name and <value> is the value of that parameter; can be used multiple times.')
+cli_parser.add_argument('-f', '--field', metavar='_index_|_path_|<parameter-key>',
+        dest='output_field',
+        action='append',
+        type=str,
+        help='Output this field for selected job(s); can be used multiple times.  The job array index is indicated by _index_; the base path by _path_; and parameter values by name <parameter-key> name.  If no fields are explicitly provided, all fields are displayed.')
+cli_parser.add_argument('-F', '--format', metavar='table|tsv|csv|json',
+        dest='format',
+        choices=('table', 'tsv', 'csv', 'json'),
+        default='table',
+        help='Output format for the selected jobs.  Default is table.')
+cli_parser.add_argument('-n', '--no-header',
+        dest='should_show_header',
+        action='store_false',
+        default=True,
+        help='Omit a header from any output format that supports it.')
+cli_parser.add_argument('-d', '--digits', metavar='<int>',
+        dest='float_digits',
+        type=int,
+        default=-1,
+        help='Number of digits to display after decimal point; -1 implies no digit limits should be expressed.')
+
+cli_args = cli_parser.parse_args()
+
+with open(cli_args.catalog_file[0], 'r') as fptr:
+    job_catalog = JobCatalog(fptr)
+
+filter_args = {}
+if cli_args.filter_by_index:
+    if len(cli_args.filter_by_index) == 1:
+        filter_args['index'] = cli_args.filter_by_index[0]
+    else:
+        filter_args['index'] = cli_args.filter_by_index
+if cli_args.filter_by_base_path:
+    if len(cli_args.filter_by_base_path) == 1:
+        filter_args['path'] = cli_args.filter_by_base_path[0]
+    else:
+        filter_args['path'] = cli_args.filter_by_base_path
+if cli_args.filter_by_parameter:
+    for parameter_spec in cli_args.filter_by_parameter:
+        parameter_key, parameter_value = parameter_spec.split('=', 1)
+        if parameter_key not in filter_args:
+            filter_args[parameter_key] = parameter_value
+        elif isinstance(filter_args[parameter_key], list):
+            filter_args[parameter_key].append(parameter_value)
+        else:
+            filter_args[parameter_key] = [filter_args[parameter_key], parameter_value]
+
+job_list = job_catalog.filtered_jobs(**filter_args)
+if job_list:
+    # Validate/produce the list of fields to display:
+    if cli_args.output_field:
+        fields = []
+        types = []
+        for field in cli_args.output_field:
+            if field == '_index_' or field == '_path_':
+                fields.append(field)
+                types.append(int if field == '_index_' else str)
+            elif field in job_catalog.parameter_keys:
+                fields.append(field)
+                types.append(job_catalog.parameter_types[field])
+            else:
+                print('No such field to display: ' + field)
+                exit(1)
+    else:
+        fields = ['_index_', '_path_']
+        types = [int, str]
+        fields.extend(job_catalog.parameter_keys)
+        types.extend([job_catalog.parameter_types[f] for f in job_catalog.parameter_keys])
+    
+    # Now that we know which fields to display, extract the data:
+    output_data = []
+    for job in job_list:
+        job_data = []
+        for field in fields:
+            if field == '_index_':
+                job_data.append(job.jindex)
+            elif field == '_path_':
+                job_data.append(job.base_path)
+            else:
+                parameter_value = job.parameter(field, default_value=None)
+                job_data.append(parameter_value if parameter_value else None)
+        output_data.append(job_data)
+    
+    # Create the chosen output filter for the data...
+    of = outputFilterMap[cli_args.format]()
+    # ...allow the output filter to pre-process the headers, data, and display options...
+    of.preprocess_output_data(output_data, types, header_row=fields, float_digits=cli_args.float_digits, should_show_header=cli_args.should_show_header)
+    # ...then print the header (if applicable)...
+    of.print_header(header_row=(fields if cli_args.should_show_header else None))
+    # ...followed by each of the rows of data...
+    for output_row in output_data:
+        of.print_row(output_row)
+    # ...and finally complete the output.
+    of.print_footer()
