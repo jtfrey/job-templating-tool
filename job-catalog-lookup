@@ -8,6 +8,11 @@ import re
 import json
 import argparse
 
+try:
+    from math import isclose
+except:
+    def isclose(a, b, rel_tol=1e-09, abs_tol=0.0):
+        return abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)
 
 class OutputFilter(object):
     """Abstract base class for the output filters for retrieved job data.  Concrete subclassses must override the print_*() methods."""
@@ -278,9 +283,9 @@ A list of job(s) matching the conditions is returned, or an empty list if no job
                     elif self.parameter_types[dict_key] == float:
                         if isinstance(dict_value, list):
                             forced_float_list = [float(i) for i in dict_value]
-                            filtered_list = filter(lambda j: float(j.parameter(dict_key)) in forced_float_list, filtered_list)
+                            filtered_list = filter(lambda j: any(True for _ in filter(lambda k: isclose(float(j.parameter(dict_key)),k), forced_float_list)) , filtered_list)
                         else:
-                            filtered_list = filter(lambda j: float(j.parameter(dict_key)) == float(dict_value), filtered_list)
+                            filtered_list = filter(lambda j: isclose(float(j.parameter(dict_key)), float(dict_value)), filtered_list)
                     else:
                         if isinstance(dict_value, list):
                             forced_str_list = [str(i) for i in dict_value]
@@ -297,16 +302,16 @@ A list of job(s) matching the conditions is returned, or an empty list if no job
                 elif self.parameter_types[parameter_key] == float:
                     if isinstance(parameter_value, list):
                         forced_float_list = [float(i) for i in parameter_value]
-                        filtered_list = filter(lambda j: float(j.parameter(parameter_key)) in forced_float_list, filtered_list)
+                        filtered_list = filter(lambda j: any(True for _ in filter(lambda k: isclose(float(j.parameter(parameter_key)),k), forced_float_list)) , filtered_list)
                     else:
-                        filtered_list = filter(lambda j: float(j.parameter(parameter_key)) == float(parameter_value), filtered_list)
+                        filtered_list = filter(lambda j: isclose(float(j.parameter(parameter_key)),float(parameter_value)), filtered_list)
                 else:
                     if isinstance(parameter_value, list):
                         forced_str_list = [str(i) for i in parameter_value]
                         filtered_list = filter(lambda j: str(j.parameter(parameter_key)) in forced_str_list, filtered_list)
                     else:
                         filtered_list = filter(lambda j: str(j.parameter(parameter_key)) == str(parameter_value), filtered_list)
-        return filtered_list
+        return list(filtered_list)
 
 
 
@@ -378,7 +383,7 @@ if cli_args.filter_by_parameter:
             filter_args[parameter_key] = [filter_args[parameter_key], parameter_value]
 
 job_list = job_catalog.filtered_jobs(**filter_args)
-if job_list:
+if len(job_list) > 0:
     # Validate/produce the list of fields to display:
     if cli_args.output_field:
         fields = []
