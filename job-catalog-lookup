@@ -409,8 +409,7 @@ if job_list:
             elif field == '_path_':
                 job_data.append(job.base_path)
             else:
-                parameter_value = job.parameter(field, default_value=None)
-                job_data.append(parameter_value if parameter_value else None)
+                job_data.append(job.parameter(field, default_value=None))
         output_data.append(job_data)
     
     # Create the chosen output filter for the data...
